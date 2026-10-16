@@ -56,7 +56,7 @@ namespace {
 
 /* This build's number, which the launcher shows and the trace and RPCS3.log
  * start with: one more for each build that goes to the console */
-const char *const titleBuild = "147";
+const char *const titleBuild = "148";
 
 /* The console's buttons as the PS3's: OPTIONS is START, the touch pad's click
  * SELECT; the PS button stays the shell's */
