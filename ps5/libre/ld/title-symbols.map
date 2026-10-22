@@ -1,0 +1,15 @@
+/*
+ * RPCS3 for PS5 - which of the title's symbols stay inside it.
+ * Copyright (c) 2026 KongaTime
+ * SPDX-License-Identifier: MIT
+ *
+ * Part of the PS5 libre layer (ps5/libre/README.md). The title's own operator
+ * new and delete (mangled _Zn and _Zd) are not exported: every module the title
+ * loads keeps its own.
+ */
+
+{
+    local:
+        _Zn*;
+        _Zd*;
+};

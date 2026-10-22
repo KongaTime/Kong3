@@ -37,8 +37,16 @@ mkdir -p "$work/link/obj" "$work/link/stubs"
 cc() { PS5_PAYLOAD_SDK="$sdk" sh "$vulkan/tooling/prospero-clang18" "$@"; }
 
 # The CRT. The C++ runtime is libc++abi's (the samples throw and catch), as in
-# PS5_Vulkan's CTS title.
-cc -std=c++20 -O2 -fno-exceptions -fno-rtti -c "$native/app_crt.cpp" -o "$work/link/obj/app_crt.o"
+# PS5_Vulkan's CTS title. PS5_LIBRE_START=1 takes the title's own start-up,
+# layout and symbol policy instead (ps5/libre/: MIT, docs/distributable-build.md)
+libre_start=${PS5_LIBRE_START:-0}
+if [[ $libre_start == 1 ]]; then
+    cc -std=c11 -O2 -fno-stack-protector -c "$ps5/libre/crt/start.c" -o "$work/link/obj/app_crt.o"
+    symbol_policy="$ps5/libre/ld/title-symbols.map"
+else
+    cc -std=c++20 -O2 -fno-exceptions -fno-rtti -c "$native/app_crt.cpp" -o "$work/link/obj/app_crt.o"
+    symbol_policy="$native/app-symbols.map"
+fi
 # RADV calls AGC, which the SDK has no stubs for: these name its imports.
 stub() {
     local library=$1 source=$2
@@ -52,6 +60,7 @@ stub libSceAgcDriver vendor/ps5/sdk/stubs/agc_driver_canary_link_stub.c
 # shellcheck source=/dev/null
 source "$vulkan/tools/radv-link.sh"
 radv_link_recipe "$vulkan" "$sdk" "$archive" || exit 2
+[[ $libre_start == 1 ]] && radv_linker_script=(-T "$ps5/libre/ld/ps5-title.ld")
 # localeconv in the C locale, '.' the decimal point (the console's gives none, and
 # tinygltf's JSON parser then read 0.62 as 0): the platform layer's since SDK fork
 # fa69d00 (tools/setup-sdk.sh's pin is never older), bound by PS5_Vulkan's recipe
@@ -67,7 +76,7 @@ if $platform_has_localeconv && [[ " ${radv_link_flags[*]} " != *" --defsym=local
     radv_link_flags+=(--defsym=localeconv=ps5_localeconv --version-script "$work/link/localeconv-local.map")
 fi
 "$sdk/bin/prospero-lld" "${radv_linker_script[@]}" --eh-frame-hdr "${radv_link_flags[@]}" \
-    --version-script "$native/app-symbols.map" --exclude-libs=ALL \
+    --version-script "$symbol_policy" --exclude-libs=ALL \
     -e _start -o "$work/link/llvm-pie.elf" \
     "$work/link/obj/app_crt.o" "${objects[@]}" \
     "$work/link/stubs/libSceAgc.so" "$work/link/stubs/libSceAgcDriver.so" \
