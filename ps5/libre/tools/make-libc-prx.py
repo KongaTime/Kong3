@@ -94,13 +94,18 @@ HEAP_SLOTS = {"malloc": 0, "free": 1, "posix_memalign": 6}
 HEAP_TABLE_SIZE = 0x100
 
 # Code addresses
-INIT = 0x00
-FINI = 0x80
-STAND_IN = 0x90
-CALLBACK_RETURN = 0xA0
-CALLBACK_RETURN_ZERO = 0xB0
-CODE_SIZE = 0xC0
+SETUP = 0x00
+INIT = 0x70
+FINI = 0x90
+STAND_IN = 0xA0
+CALLBACK_RETURN = 0xB0
+CALLBACK_RETURN_ZERO = 0xC0
+CODE_SIZE = 0xD0
 DATA_VA = PAGE
+
+# The libc_setjmp library's two functions, by name (the console's modules may
+# link to them): stand-ins, as in the current module
+SETJMP_EXPORTS = [("_setjmp", 1), ("_longjmp", 2)]
 
 # Data offsets
 MODULE_PARAM = 0x00
@@ -136,7 +141,7 @@ def got_slot(key):
     return DATA_VA + GOT + 8 * (GOT_RESERVED + index)
 
 
-def code():
+def code(setup_from, threads, heap):
     out = bytearray()
 
     def rel32(target, instruction_length):
@@ -154,26 +159,40 @@ def code():
     def store_rax(target):
         out.extend(b"\x48\x89\x05" + rel32(target, 7))
 
-    # 0x00 start: the thread callbacks, then the heap table
+    # 0x00 the set-up: the thread callbacks, then the heap table
     out.extend(b"\x48\x83\xec\x08")                  # sub rsp, 8
-    lea_rdi(CALLBACK_RETURN)
-    call_slot(got_slot("thread_dtors"))
-    lea_rdi(CALLBACK_RETURN_ZERO)
-    call_slot(got_slot("atexit_count"))
-    lea_rdi(CALLBACK_RETURN)
-    call_slot(got_slot("atexit_report"))
-    table = DATA_VA + HEAP_TABLE
-    for key, slot in HEAP_SLOTS.items():
-        load_rax(got_slot(key))
-        store_rax(table + 8 * slot)
-    lea_rdi(table)
-    call_slot(got_slot("heap_api"))
+    if threads:
+        lea_rdi(CALLBACK_RETURN)
+        call_slot(got_slot("thread_dtors"))
+        lea_rdi(CALLBACK_RETURN_ZERO)
+        call_slot(got_slot("atexit_count"))
+        lea_rdi(CALLBACK_RETURN)
+        call_slot(got_slot("atexit_report"))
+    if heap:
+        table = DATA_VA + HEAP_TABLE
+        for key, slot in HEAP_SLOTS.items():
+            load_rax(got_slot(key))
+            store_rax(table + 8 * slot)
+        lea_rdi(table)
+        call_slot(got_slot("heap_api"))
     out.extend(b"\x48\x83\xc4\x08\x31\xc0\xc3")      # add rsp, 8; xor eax, eax; ret
-    assert len(out) <= FINI, len(out)
+    assert len(out) <= INIT, len(out)
 
     def at(address, blob):
         out.extend(bytes(address - len(out)))
         out.extend(blob)
+
+    # The start function: the set-up itself, or (setup_from == "preinit") the
+    # preinit array's entry when the loader has filled it, as the current module
+    out.extend(bytes(INIT - len(out)))
+    if setup_from == "init":
+        out.extend(b"\xe9" + struct.pack("<i", SETUP - (len(out) + 5)))   # jmp set-up
+    else:
+        out.extend(b"\x48\x83\xec\x08")                                 # sub rsp, 8
+        load_rax(DATA_VA + PREINIT)                                        # mov rax, [preinit]
+        out.extend(b"\x48\x85\xc0\x74\x02\xff\xd0")                  # test rax, rax; je +2; call rax
+        out.extend(b"\x48\x83\xc4\x08\x31\xc0\xc3")                  # add rsp, 8; xor eax, eax; ret
+    assert len(out) <= FINI, len(out)
 
     at(FINI, b"\x31\xc0\xc3")                          # stop: return 0
     at(STAND_IN, b"\x66\x0f\xef\xc0\x31\xc0\xc3")      # xmm0 = 0, eax = 0, return
@@ -196,7 +215,7 @@ def read_exports(path):
     return exports
 
 
-def build(exports, comment):
+def build(exports, comment, setup_from="init", threads=True, heap=True):
     module_param = struct.pack("<QIIQQ", 0x20, 0x3C13F4BF, 3, 0x0200000908050001, 1)
     data = bytearray(HEAP_TABLE + HEAP_TABLE_SIZE)
     data[MODULE_PARAM:MODULE_PARAM + 0x20] = module_param
@@ -206,7 +225,7 @@ def build(exports, comment):
             data += bytes(align(len(data), 8) - len(data))
             object_at[name] = len(data)
             data += bytes(max(size, 8))
-    text = code()
+    text = code(setup_from, threads, heap)
 
     strings = bytearray(b"\0")
 
@@ -231,6 +250,10 @@ def build(exports, comment):
         import_index[key] = len(symbols)
         symbols.append((string(name), (1 << 4) | 2, 0, 0, 0, 0))
         names.append(name)
+    for function, binding in SETJMP_EXPORTS:
+        name = f"{nid(function)}#{BASE64[EXPORT_LIBRARIES[1][1]]}#A"
+        symbols.append((string(name), (binding << 4) | 2, 0, 1, STAND_IN, 16))
+        names.append(name)
     export_letter = BASE64[EXPORT_LIBRARIES[0][1]]
     for exported, binding, kind, size in exports:
         name = f"{exported}#{export_letter}#A"
@@ -251,6 +274,8 @@ def build(exports, comment):
         chains[index] = buckets[h]
         buckets[h] = index
     hash_table = struct.pack(f"<II{nbucket}I{nchain}I", nbucket, nchain, *buckets, *chains)
+    # The preinit array's entry: the set-up's address, made absolute at load
+    rela = struct.pack("<QQq", DATA_VA + PREINIT, 8, SETUP) if setup_from == "preinit" else b""
     jmprel = b"".join(struct.pack("<QQq", got_slot(key), (import_index[key] << 32) | R_X86_64_JUMP_SLOT, 0)
                       for key, _, _ in IMPORTS)
 
@@ -258,7 +283,8 @@ def build(exports, comment):
     strtab_va = tables_va
     symtab_va = align(strtab_va + len(strings), 8)
     hash_va = align(symtab_va + len(symtab), 8)
-    jmprel_va = align(hash_va + len(hash_table), 8)
+    rela_va = align(hash_va + len(hash_table), 8)
+    jmprel_va = align(rela_va + len(rela), 8)
     dynamic_va = align(jmprel_va + len(jmprel), 8)
 
     dynamic = [(DT_SONAME, soname)]
@@ -278,7 +304,7 @@ def build(exports, comment):
         dynamic.append((DT_SCE_EXPORT_LIB, (identifier << 48) | (1 << 32) | export_names[name]))
         dynamic.append((DT_SCE_EXPORT_LIB_ATTR, (identifier << 48) | 1))
     dynamic += [
-        (DT_RELA, jmprel_va), (DT_RELASZ, 0), (DT_RELAENT, 0x18),
+        (DT_RELA, rela_va), (DT_RELASZ, len(rela)), (DT_RELAENT, 0x18),
         (DT_JMPREL, jmprel_va), (DT_PLTRELSZ, len(jmprel)), (DT_PLTGOT, DATA_VA + GOT), (DT_PLTREL, DT_RELA),
         (DT_SYMTAB, symtab_va), (DT_SYMENT, 0x18), (DT_STRTAB, strtab_va), (DT_STRSZ, len(strings)),
         (DT_HASH, hash_va),
@@ -299,6 +325,7 @@ def build(exports, comment):
     place(strtab_va, strings)
     place(symtab_va, symtab)
     place(hash_va, hash_table)
+    place(rela_va, rela)
     place(jmprel_va, jmprel)
     place(dynamic_va, dynamic_bytes)
 
@@ -342,8 +369,13 @@ def main():
     parser.add_argument("--out", required=True)
     parser.add_argument("--exports", help='"NID binding type size" lines to export (none without it)')
     parser.add_argument("--comment", default="libc.prx (PS5 libre layer, MIT)")
+    parser.add_argument("--setup-from", choices=["init", "preinit"], default="preinit",
+                        help="where the set-up runs: the start function, or the preinit array (the default)")
+    parser.add_argument("--no-threads", action="store_true", help="leave out the thread callbacks (an experiment)")
+    parser.add_argument("--no-heap", action="store_true", help="leave out the heap table (an experiment)")
     arguments = parser.parse_args()
-    module, exported, imported = build(read_exports(arguments.exports), arguments.comment)
+    module, exported, imported = build(read_exports(arguments.exports), arguments.comment,
+                                       arguments.setup_from, not arguments.no_threads, not arguments.no_heap)
     with open(arguments.out, "wb") as f:
         f.write(module)
     print(f"wrote {arguments.out}: {len(module)} bytes, {exported} exported, {imported} imported")
