@@ -215,7 +215,13 @@ def read_exports(path):
     return exports
 
 
-def build(exports, comment, setup_from="init", threads=True, heap=True):
+def build(exports, comment, setup_from="init", threads=True, heap=True, minimal=False):
+    # minimal: no imports, no set-up, no stand-ins (the title's start-up does the
+    # set-up: ps5/libre/crt/start.c); what experiment 1 proved the loader accepts
+    imports = [] if minimal else IMPORTS
+    import_from = [] if minimal else IMPORT_FROM
+    if minimal:
+        setup_from, threads, heap = "init", False, False
     module_param = struct.pack("<QIIQQ", 0x20, 0x3C13F4BF, 3, 0x0200000908050001, 1)
     data = bytearray(HEAP_TABLE + HEAP_TABLE_SIZE)
     data[MODULE_PARAM:MODULE_PARAM + 0x20] = module_param
@@ -236,21 +242,21 @@ def build(exports, comment, setup_from="init", threads=True, heap=True):
 
     soname = string("libc.prx")
     export_names = {name: string(name) for name, _ in EXPORT_LIBRARIES}
-    module_files = {file: string(file) for file, _, _, _, _ in IMPORT_FROM}
-    module_names = {module: string(module) for _, module, _, _, _ in IMPORT_FROM}
-    library_names = {library: string(library) for _, _, _, library, _ in IMPORT_FROM}
+    module_files = {file: string(file) for file, _, _, _, _ in import_from}
+    module_names = {module: string(module) for _, module, _, _, _ in import_from}
+    library_names = {library: string(library) for _, _, _, library, _ in import_from}
     original = string(comment)
 
     symbols = [(0, 0, 0, 0, 0, 0)]
     names = [""]
     import_index = {}
-    for key, function, module in IMPORTS:
-        _, _, module_id, _, library_id = next(m for m in IMPORT_FROM if m[1] == module)
+    for key, function, module in imports:
+        _, _, module_id, _, library_id = next(m for m in import_from if m[1] == module)
         name = f"{nid(function)}#{BASE64[library_id]}#{BASE64[module_id]}"
         import_index[key] = len(symbols)
         symbols.append((string(name), (1 << 4) | 2, 0, 0, 0, 0))
         names.append(name)
-    for function, binding in SETJMP_EXPORTS:
+    for function, binding in ([] if minimal else SETJMP_EXPORTS):
         name = f"{nid(function)}#{BASE64[EXPORT_LIBRARIES[1][1]]}#A"
         symbols.append((string(name), (binding << 4) | 2, 0, 1, STAND_IN, 16))
         names.append(name)
@@ -277,7 +283,7 @@ def build(exports, comment, setup_from="init", threads=True, heap=True):
     # The preinit array's entry: the set-up's address, made absolute at load
     rela = struct.pack("<QQq", DATA_VA + PREINIT, 8, SETUP) if setup_from == "preinit" else b""
     jmprel = b"".join(struct.pack("<QQq", got_slot(key), (import_index[key] << 32) | R_X86_64_JUMP_SLOT, 0)
-                      for key, _, _ in IMPORTS)
+                      for key, _, _ in imports)
 
     tables_va = DATA_VA + align(len(data), PAGE)
     strtab_va = tables_va
@@ -288,7 +294,7 @@ def build(exports, comment, setup_from="init", threads=True, heap=True):
     dynamic_va = align(jmprel_va + len(jmprel), 8)
 
     dynamic = [(DT_SONAME, soname)]
-    for file, module, module_id, library, library_id in IMPORT_FROM:
+    for file, module, module_id, library, library_id in import_from:
         dynamic += [
             (DT_NEEDED, module_files[file]),
             (DT_SCE_NEEDED_MODULE, (module_id << 48) | (1 << 40) | (1 << 32) | module_names[module]),
@@ -305,7 +311,10 @@ def build(exports, comment, setup_from="init", threads=True, heap=True):
         dynamic.append((DT_SCE_EXPORT_LIB_ATTR, (identifier << 48) | 1))
     dynamic += [
         (DT_RELA, rela_va), (DT_RELASZ, len(rela)), (DT_RELAENT, 0x18),
-        (DT_JMPREL, jmprel_va), (DT_PLTRELSZ, len(jmprel)), (DT_PLTGOT, DATA_VA + GOT), (DT_PLTREL, DT_RELA),
+    ]
+    if imports:
+        dynamic += [(DT_JMPREL, jmprel_va), (DT_PLTRELSZ, len(jmprel)), (DT_PLTGOT, DATA_VA + GOT), (DT_PLTREL, DT_RELA)]
+    dynamic += [
         (DT_SYMTAB, symtab_va), (DT_SYMENT, 0x18), (DT_STRTAB, strtab_va), (DT_STRSZ, len(strings)),
         (DT_HASH, hash_va),
         (DT_PREINIT_ARRAY, DATA_VA + PREINIT), (DT_PREINIT_ARRAYSZ, 8),
@@ -361,7 +370,7 @@ def build(exports, comment, setup_from="init", threads=True, heap=True):
     out[data_offset:data_offset + len(data)] = data
     out[tables_offset:tables_offset + len(tables)] = tables
     out[comment_offset:end] = comment_record
-    return bytes(out), len(exports), len(IMPORTS)
+    return bytes(out), len(exports), len(imports)
 
 
 def main():
@@ -373,9 +382,12 @@ def main():
                         help="where the set-up runs: the start function, or the preinit array (the default)")
     parser.add_argument("--no-threads", action="store_true", help="leave out the thread callbacks (an experiment)")
     parser.add_argument("--no-heap", action="store_true", help="leave out the heap table (an experiment)")
+    parser.add_argument("--minimal", action="store_true",
+                        help="no imports, no set-up, no stand-ins: the title's start-up does the set-up")
     arguments = parser.parse_args()
     module, exported, imported = build(read_exports(arguments.exports), arguments.comment,
-                                       arguments.setup_from, not arguments.no_threads, not arguments.no_heap)
+                                       arguments.setup_from, not arguments.no_threads, not arguments.no_heap,
+                                       arguments.minimal)
     with open(arguments.out, "wb") as f:
         f.write(module)
     print(f"wrote {arguments.out}: {len(module)} bytes, {exported} exported, {imported} imported")

@@ -21,6 +21,45 @@ typedef void (*start_function)(void);
 
 /* The console's C library */
 extern void _init_env(void *start_block);
+
+/* What a title's libc.prx does at its start, done here first instead, so the
+ * module the title carries needs no imports (ps5/libre/tools/make-libc-prx.py
+ * --minimal): with imports, even unused, the console stopped before the title's
+ * first line (experiments 2 to 6 on my console); with none and no set-up, the
+ * title ran until its first file operations (experiment 1). The set-up: three
+ * thread callbacks for libkernel, and libkernel's loader handed a heap table with
+ * the system C library's malloc, free and posix_memalign in slots 0, 1 and 6. The
+ * title wraps malloc and the others (its heap in direct memory), so the system's
+ * own are the __real_ names */
+extern int _sceKernelSetThreadDtors(void (*callback)(void));
+extern int _sceKernelSetThreadAtexitCount(int (*callback)(void));
+extern int _sceKernelSetThreadAtexitReport(void (*callback)(void));
+extern int _sceKernelRtldSetApplicationHeapAPI(void *table[]);
+extern void *__real_malloc(unsigned long size);
+extern void __real_free(void *pointer);
+extern int __real_posix_memalign(void **out, unsigned long alignment, unsigned long size);
+
+static void *heap_api[32];
+
+static void thread_callback(void)
+{
+}
+
+static int thread_atexit_count(void)
+{
+   return 0;
+}
+
+static void libc_setup(void)
+{
+   (void)_sceKernelSetThreadDtors(thread_callback);
+   (void)_sceKernelSetThreadAtexitCount(thread_atexit_count);
+   (void)_sceKernelSetThreadAtexitReport(thread_callback);
+   heap_api[0] = (void *)__real_malloc;
+   heap_api[1] = (void *)__real_free;
+   heap_api[6] = (void *)__real_posix_memalign;
+   (void)_sceKernelRtldSetApplicationHeapAPI(heap_api);
+}
 extern int atexit(void (*function)(void));
 extern void exit(int status) __attribute__((noreturn));
 
@@ -99,6 +138,7 @@ __attribute__((noreturn, visibility("default"))) void _start(void *start_block, 
    char **envp = argv ? argv + argc + 1 : 0;
 
    floating_point_ieee();
+   libc_setup();
    _init_env(start_block);
    if (at_exit)
       (void)atexit(at_exit);

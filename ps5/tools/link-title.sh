@@ -121,8 +121,15 @@ cp "$param" "$app/sce_sys/param.json"
 for asset in icon0.png pic0.dds pic1.dds snd0.at9; do
     [[ -f $ps5/sce_sys/$asset ]] && cp "$ps5/sce_sys/$asset" "$app/sce_sys/$asset"
 done
-(cd "$vulkan/runtime" && sha256sum --check --strict --quiet libc.prx.sha256)
-cp "$vulkan/runtime/libc.prx" "$app/sce_module/libc.prx"
+if [[ $libre_start == 1 ]]; then
+    # The title's own module, written and signed here (ps5/libre/tools/make-libc-prx.py):
+    # no imports, the set-up done by the start-up instead
+    python3 "$ps5/libre/tools/make-libc-prx.py" --minimal --out "$work/link/libc.raw.elf" > /dev/null
+    "$tool" self --sign --in "$work/link/libc.raw.elf" --out "$app/sce_module/libc.prx" > /dev/null
+else
+    (cd "$vulkan/runtime" && sha256sum --check --strict --quiet libc.prx.sha256)
+    cp "$vulkan/runtime/libc.prx" "$app/sce_module/libc.prx"
+fi
 # The precompiled SPIR-V of the base class and of each sample linked in
 # (CMake writes the list without a final newline: read then reports end of file).
 # A sample that draws only with the UI kit has none: the kit carries its own.
