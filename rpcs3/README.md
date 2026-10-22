@@ -3,20 +3,56 @@
 This title's program is [RPCS3](https://rpcs3.net/), the PlayStation 3 emulator, from my
 fork [PS5_RPCS3](https://github.com/KongaTime/PS5_RPCS3). RPCS3's developers make the
 emulator; the fork adds what the console needs (`__PROSPERO__` and `PS5` in its sources
-and CMake), and its frontend for the console is in `rpcs3/ps5/` there.
+and CMake), and its frontend for the console, a launcher and a pause menu, is in
+`rpcs3/ps5/` there.
 
-**Not working yet.** It builds into a packaged title (`dist/PPSA99200/`, a 60 MB
-`eboot.bin`) that starts on the console: on my PS5 RPCS3 initialised the emulator
-and stopped cleanly (PS5_RPCS3 0138ef4), and installed Sony's PS3 system software
-4.93 from `PS3UPDAT.PUP`, 23 packages in 7.5 s (8a47032). It plays nothing yet: no
-PS3 code has run, nothing is drawn.
-What is proven, and what is not, is in the commit messages of both repositories.
+> [!IMPORTANT]
+> **Piracy is not condoned.** Nothing here contains, or will ever provide or link to,
+> games, PS3 firmware, BIOS files or decryption keys. Install the PS3 system software
+> from Sony's own `PS3UPDAT.PUP`, and play backups of games you own, made yourself.
 
-**Licence.** RPCS3 is GPL-2.0-only and the PS5 platform layer it links is
-GPL-3.0-or-later: the two cannot be combined in one program that is shared. Build it
-for your own console from source; do not share the builds. No games, firmware or keys
-are or will be provided: install the PS3 system software from Sony's own
-`PS3UPDAT.PUP`, and use dumps of games you own.
+> [!WARNING]
+> **Source only. There is no download of the built title, and there will not be one.**
+> RPCS3 is GPL-2.0-only, and the PS5 platform layer every title links is
+> GPL-3.0-or-later: the two cannot be combined into one program that is shared. Build
+> it yourself, for your own console, from the source below, and **do not share the
+> builds** (`eboot.bin`, `rpcs3-code.bin` or the title folder).
+
+## What works
+
+Measured on my console, with build 150 (PS5_RPCS3 `d2b0ef4`):
+
+- Commercial PS3 games boot and play, with both recompilers (PPU and SPU LLVM). One
+  open-world game I test with played for 20 minutes, through its first missions to a
+  save, at about 27 fps, with no crash and the heap flat at about 3 GiB. Another
+  open-world game played 7.5 minutes at about 25 fps, its graphics thread flat at
+  about 600 MiB. Both are CPU-bound: the emulated SPUs run at 85 to 100% of their
+  cores.
+- **Frame generation** shows frames made between the game's own, three ways: the
+  title's own, Lossless Scaling's (from your own `Lossless.dll`, below) and MihawkGen,
+  a small trained network built in. With one frame made between, the 27 fps game
+  showed about 45 frames a second; fast camera turns can smear or double edges.
+- **A launcher**: the games in `rpcs3/games/` (folders and ISOs) with search, sort and
+  favourites; trophies; save data; game patches (`patch.yml`); PS3 packages and
+  licences from `rpcs3/packages/`; screenshots. **A pause menu** (L1 + R1 + the touch
+  pad): quick settings, save states, controller remapping per game, a performance
+  page.
+- Each game's own settings (RPCS3's custom configurations), set in the launcher.
+- Sound through the console's audio output; up to four controllers.
+
+## What does not, or not yet
+
+- **Speed.** Heavy games run well below full speed: the console's CPU emulates the
+  PS3's Cell, and the SPUs are the limit. Frame generation makes motion smoother; it
+  does not make the game itself faster.
+- **First boots are slow.** A game's first boot compiles its code (several minutes,
+  with the screen still or a progress screen), and its shaders compile as they first
+  appear (stutter). Later boots load both from the cache.
+- Some games freeze without **Accurate SPU Reservations** (on by default: leave it on).
+- The graphics driver keeps up to 1 MiB for each of RPCS3's command buffers, about
+  500 MiB in a long session.
+- Untested in this release: a controller fix for games that ask for the controller's
+  motion sensors (build 147), and most of the PS3's library. Report what you find.
 
 ## How the pieces fit
 
@@ -33,61 +69,63 @@ are or will be provided: install the PS3 system software from Sony's own
 | `rpcs3/title_main.cpp` | here | the program: reads the controllers, starts RPCS3 |
 
 RPCS3's Vulkan calls go through the foundation's volk to the RADV the title links. Its
-files live in `/app0/rpcs3/` (the configuration, `dev_hdd0`), its caches and log in
-`/app0/rpcs3/cache/` (`RPCS3.log`). Its warnings and errors reach klog, and each step
-of the start, with those warnings and errors, goes to `/app0/rpcs3-trace.txt`, which
-FTP can read without klog.
-
-The controllers: players 1 to 4 are the console's controllers. OPTIONS is START, the
-touch pad's click is SELECT; the PS button stays the console's.
+files live in `/app0/rpcs3/` (the configuration, `dev_hdd0`, `games/`), its caches and its log
+(`RPCS3.log`) in `/app0/rpcs3/cache/`, and each step of the start
+with a status line every 5 seconds in `/app0/rpcs3-trace.txt`, which FTP can read.
 
 ## Building
 
-With the stack beside this repository (`ps5/tools/bootstrap.sh`), with
-`../PS5_PayloadSDK` my fork ([KongaTime/PS5_PayloadSDK](https://github.com/KongaTime/PS5_PayloadSDK):
-the SDK pin, `1de8b37`, adds `pathconf` and `sbrk`), and PS5_RPCS3 cloned as `../PS5_RPCS3` with
-its submodules (OpenCV's is not needed; LLVM's at depth 1 is enough):
+You need a Linux PC (I use Arch and CachyOS) and a PS5 running a homebrew environment
+(an enabler, ShadowMountPlus for `/data/homebrew`, an FTP server). The repositories,
+side by side in one folder:
+
+| Repository | Clone it as | Revision of this release |
+| --- | --- | --- |
+| [KongaTime/PS5_RPCS3Title](https://github.com/KongaTime/PS5_RPCS3Title) (this) | `PS5_RPCS3Title` | the release tag |
+| [KongaTime/PS5_RPCS3](https://github.com/KongaTime/PS5_RPCS3), branch `main` | `PS5_RPCS3` | `d2b0ef47b4179a66be285b40d7539ecb184ee9b2`, with its submodules (OpenCV's is not needed; LLVM's at depth 1 is enough) |
+| [KongaTime/PS5_PayloadSDK](https://github.com/KongaTime/PS5_PayloadSDK) | `PS5_PayloadSDK` | `1de8b37d583de476ad07cde9a0d562b75fb1be8f` (`ps5/tools/setup-sdk.sh` pins it) |
+| [KongaTime/PS5_Vulkan](https://github.com/KongaTime/PS5_Vulkan), branch `rpcs3-beta-1` | `PS5_Vulkan` | `f3cbf875f89978deae9f855b9be2610cec2818ae` |
+| [KongaTime/PS5_Mesa](https://github.com/KongaTime/PS5_Mesa), branch `rpcs3-beta-1` | `PS5_Mesa` | `dc82d010021e4bae5a12cd143ff44db4d7307e47` (PS5_Vulkan's `tools/build-radv.sh` pins it) |
 
 ```bash
+git clone https://github.com/KongaTime/PS5_RPCS3Title
+git clone -b main --recurse-submodules --shallow-submodules https://github.com/KongaTime/PS5_RPCS3
+git clone https://github.com/KongaTime/PS5_PayloadSDK
+git clone -b rpcs3-beta-1 https://github.com/KongaTime/PS5_Vulkan
+git clone -b rpcs3-beta-1 https://github.com/KongaTime/PS5_Mesa
+cd PS5_RPCS3Title
+```
+
+```bash
+ps5/tools/bootstrap.sh --check            # what the PC is missing
+ps5/tools/bootstrap.sh                    # builds the stack beside this repository (RADV: long)
 rpcs3/build-rpcs3.sh rpcs3_ps5 Fusion     # FFmpeg, libiconv and LLVM first (LLVM: hours), then RPCS3
 PS5_CLANG=clang-20 ps5/tools/build.sh     # the title, linked with RPCS3, in dist/PPSA99200/
 ```
-
-Then copy `dist/PPSA99200/` to the console's `/data/homebrew/` (`ps5/tools/deploy.sh`).
 
 `PS5_CLANG` names the clang whose compiler-rt the link takes: the same version the SDK
 compiles with (the newest `llvm-config` it finds), or the link stops on a missing
 `libclang_rt.builtins-x86_64.a`.
 
-## Running
+## Installing and running
 
-The PS3 system software first: put Sony's `PS3UPDAT.PUP` (the PS3 update from
-PlayStation's own site) in the title's folder, `/data/homebrew/PPSA99200/`, and launch:
-RPCS3 installs it into `rpcs3/dev_flash/`, once. Then, with nothing named to boot,
-a launch boots the PS3's home menu.
+1. Copy `dist/PPSA99200/` to the console's `/data/homebrew/PPSA99200/` over FTP
+   (`ps5/tools/deploy.sh`), and register it with ShadowMountPlus.
+2. Put Sony's `PS3UPDAT.PUP` (the PS3 update from PlayStation's own site) in
+   `/data/homebrew/PPSA99200/` and launch the title: it installs the system software
+   once.
+3. Put your games, each a folder or an ISO you made from your own disc, in
+   `/data/homebrew/PPSA99200/rpcs3/games/`; PS3 packages and their licences in
+   `rpcs3/packages/`, installed from the launcher's Install tab.
+4. For Lossless Scaling's frame generation: your own copy of its `Lossless.dll` (from
+   Steam) in `/data/homebrew/PPSA99200/rpcs3/`. It is read there, never copied or
+   shipped.
 
-`/app0/rpcs3-boot.txt` (the title's folder on the console) names what to boot, on its
-first line: an ELF, or a game's folder (booted through its `EBOOT.BIN`; a disc's
-`PKGDIR` packages install at its first boot). Without it the PS3 home menu boots.
+Updating: replace `eboot.bin` and `rpcs3-code.bin`; your settings, saves, games and
+caches stay.
 
-Measured on my console (PS5_RPCS3 0cc0383, both recompilers): the Ratchet & Clank
-Collection (BCUS98282, a disc folder) booted, ran its menu and its video at full
-speed, and started Ratchet & Clank 1 through exitspawn; the game ran at 60 fps,
-New Game, saving from the pause menu and loading from the main menu worked
-through RPCS3's native save data list. With PS5_RPCS3 607da38 it had sound,
-through the console's own output (libSceAudioOut). Each game's first boot
-compiles for several minutes with the screen still.
+## Reporting problems
 
-## Not done
-
-- LLVM's first compile is slow, and compiling as code first runs leaves the
-  screen still: on my console (PS5_RPCS3 5864031, both recompilers, one compile
-  thread) the PS3 home menu drew from 40 s, stood still from 100 s to 270 s while
-  24 modules compiled, then ran at 60 fps (3597 RSX flips a minute) for the 40
-  minutes it was left. `/app0/rpcs3-interpreter.txt` goes back to the
-  interpreters (`ppu` or `spu` alone for one), `/app0/rpcs3-llvm-threads.txt`
-  bounds the compile threads, `/app0/rpcs3-llvm-logs.txt` keeps each PPU
-  module's IR beside it.
-- Installing PSN packages, a game list.
-- The console's 16 KiB pages against RPCS3's 4 KiB memory protection, and its
-  thread-local storage (emulated on the console: every access is a call).
+Send `rpcs3/cache/RPCS3.log` and `rpcs3-trace.txt` from the title's folder, copied before
+the next launch (a launch replaces them), with what you saw and when. Never attach
+games, firmware, keys or saves.
