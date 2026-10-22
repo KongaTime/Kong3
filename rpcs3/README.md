@@ -51,8 +51,7 @@ Measured on my console, with build 150 (PS5_RPCS3 `d2b0ef4`):
 - Some games freeze without **Accurate SPU Reservations** (on by default: leave it on).
 - The graphics driver keeps up to 1 MiB for each of RPCS3's command buffers, about
   500 MiB in a long session.
-- Untested in this release: a controller fix for games that ask for the controller's
-  motion sensors (build 147), and most of the PS3's library. Report what you find.
+- Untested in this release: most of the PS3's library. Report what you find.
 
 ## How the pieces fit
 
