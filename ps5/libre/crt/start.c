@@ -31,10 +31,14 @@ extern void _init_env(void *start_block);
  * the system C library's malloc, free and posix_memalign in slots 0, 1 and 6. The
  * title wraps malloc and the others (its heap in direct memory), so the system's
  * own are the __real_ names */
-extern int _sceKernelSetThreadDtors(void (*callback)(void));
-extern int _sceKernelSetThreadAtexitCount(int (*callback)(void));
-extern int _sceKernelSetThreadAtexitReport(void (*callback)(void));
-extern int _sceKernelRtldSetApplicationHeapAPI(void *table[]);
+/* Looked up at run time, not imported: a title importing them was refused by the
+ * loader before its first instruction (builds 152 and 153 on my console; no
+ * /app0/libre-start.txt), as was a libc.prx importing them (experiments 2 to 6) */
+typedef int (*callback_setter)(void *callback);
+typedef int (*heap_api_setter)(void *table[]);
+extern int sceKernelGetModuleList(int *handles, unsigned long capacity, unsigned long *count);
+extern int sceKernelGetModuleInfo(int handle, void *info);
+extern int sceKernelDlsym(int handle, const char *name, void **address);
 extern void *__real_malloc(unsigned long size);
 extern void __real_free(void *pointer);
 extern int __real_posix_memalign(void **out, unsigned long alignment, unsigned long size);
@@ -78,23 +82,87 @@ static int thread_atexit_count(void)
    return 0;
 }
 
+/* The module information sceKernelGetModuleInfo fills: its size first, then the
+ * module's name, then segments and a fingerprint (0x160 bytes in all) */
+struct module_info
+{
+   unsigned long size;
+   char name[256];
+   unsigned char rest[0x160 - 8 - 256];
+};
+
+static int starts_with(const char *text, const char *prefix)
+{
+   while (*prefix)
+   {
+      if (*text++ != *prefix++)
+         return 0;
+   }
+   return 1;
+}
+
+static int libkernel_handle(void)
+{
+   int handles[256];
+   unsigned long count = 0;
+   if (sceKernelGetModuleList(handles, 256, &count) != 0)
+      return -1;
+   for (unsigned long i = 0; i < count && i < 256; i++)
+   {
+      struct module_info info;
+      for (unsigned long b = 0; b < sizeof(info); b++)
+         ((unsigned char *)&info)[b] = 0;
+      info.size = sizeof(info);
+      if (sceKernelGetModuleInfo(handles[i], &info) == 0 && starts_with(info.name, "libkernel"))
+         return handles[i];
+   }
+   return -1;
+}
+
+static void *kernel_function(int handle, const char *name)
+{
+   void *address = 0;
+   if (sceKernelDlsym(handle, name, &address) != 0 || !address)
+   {
+      step("setup: not found:");
+      step(name);
+      return 0;
+   }
+   return address;
+}
+
 static void libc_setup(void)
 {
+   step("setup: finding libkernel");
+   const int handle = libkernel_handle();
+   if (handle < 0)
+   {
+      step("setup: libkernel not found");
+      return;
+   }
    if (!switched_off("/app0/libre-no-threads.txt"))
    {
       step("setup: thread callbacks");
-      (void)_sceKernelSetThreadDtors(thread_callback);
-      (void)_sceKernelSetThreadAtexitCount(thread_atexit_count);
-      (void)_sceKernelSetThreadAtexitReport(thread_callback);
+      callback_setter dtors = (callback_setter)kernel_function(handle, "_sceKernelSetThreadDtors");
+      callback_setter count = (callback_setter)kernel_function(handle, "_sceKernelSetThreadAtexitCount");
+      callback_setter report = (callback_setter)kernel_function(handle, "_sceKernelSetThreadAtexitReport");
+      if (dtors)
+         (void)dtors((void *)thread_callback);
+      if (count)
+         (void)count((void *)thread_atexit_count);
+      if (report)
+         (void)report((void *)thread_callback);
       step("setup: thread callbacks done");
    }
    if (!switched_off("/app0/libre-no-heap.txt"))
    {
       step("setup: heap table");
+      heap_api_setter set_heap = (heap_api_setter)kernel_function(handle, "_sceKernelRtldSetApplicationHeapAPI");
       heap_api[0] = (void *)__real_malloc;
       heap_api[1] = (void *)__real_free;
       heap_api[6] = (void *)__real_posix_memalign;
-      (void)_sceKernelRtldSetApplicationHeapAPI(heap_api);
+      if (set_heap)
+         (void)set_heap(heap_api);
       step("setup: heap table done");
    }
 }
