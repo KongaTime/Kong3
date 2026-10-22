@@ -41,6 +41,34 @@ extern int __real_posix_memalign(void **out, unsigned long alignment, unsigned l
 
 static void *heap_api[32];
 
+/* Diagnostics for the start-up, until it is proven on the console: a line in
+ * /app0/libre-start.txt for each step, written with libkernel's own file calls
+ * (the C library is not set up yet), and switch files that leave a step out.
+ * FreeBSD's O_WRONLY | O_APPEND | O_CREAT */
+extern int sceKernelOpen(const char *path, int flags, int mode);
+extern long sceKernelWrite(int fd, const void *buffer, unsigned long size);
+extern int sceKernelClose(int fd);
+extern int sceKernelStat(const char *path, void *status);
+
+static void step(const char *text)
+{
+   unsigned long length = 0;
+   while (text[length])
+      length++;
+   const int fd = sceKernelOpen("/app0/libre-start.txt", 0x1 | 0x8 | 0x200, 0666);
+   if (fd < 0)
+      return;
+   (void)sceKernelWrite(fd, text, length);
+   (void)sceKernelWrite(fd, "\n", 1);
+   (void)sceKernelClose(fd);
+}
+
+static int switched_off(const char *path)
+{
+   unsigned char status[256];
+   return sceKernelStat(path, status) == 0;
+}
+
 static void thread_callback(void)
 {
 }
@@ -52,13 +80,23 @@ static int thread_atexit_count(void)
 
 static void libc_setup(void)
 {
-   (void)_sceKernelSetThreadDtors(thread_callback);
-   (void)_sceKernelSetThreadAtexitCount(thread_atexit_count);
-   (void)_sceKernelSetThreadAtexitReport(thread_callback);
-   heap_api[0] = (void *)__real_malloc;
-   heap_api[1] = (void *)__real_free;
-   heap_api[6] = (void *)__real_posix_memalign;
-   (void)_sceKernelRtldSetApplicationHeapAPI(heap_api);
+   if (!switched_off("/app0/libre-no-threads.txt"))
+   {
+      step("setup: thread callbacks");
+      (void)_sceKernelSetThreadDtors(thread_callback);
+      (void)_sceKernelSetThreadAtexitCount(thread_atexit_count);
+      (void)_sceKernelSetThreadAtexitReport(thread_callback);
+      step("setup: thread callbacks done");
+   }
+   if (!switched_off("/app0/libre-no-heap.txt"))
+   {
+      step("setup: heap table");
+      heap_api[0] = (void *)__real_malloc;
+      heap_api[1] = (void *)__real_free;
+      heap_api[6] = (void *)__real_posix_memalign;
+      (void)_sceKernelRtldSetApplicationHeapAPI(heap_api);
+      step("setup: heap table done");
+   }
 }
 extern int atexit(void (*function)(void));
 extern void exit(int status) __attribute__((noreturn));
@@ -138,14 +176,18 @@ __attribute__((noreturn, visibility("default"))) void _start(void *start_block, 
    char **envp = argv ? argv + argc + 1 : 0;
 
    floating_point_ieee();
+   step("---- start");
    libc_setup();
+   step("_init_env");
    _init_env(start_block);
    if (at_exit)
       (void)atexit(at_exit);
    (void)atexit(run_fini_array);
 
+   step("preinit and init arrays");
    run_array(__preinit_array_start, __preinit_array_end);
    run_array(__init_array_start, __init_array_end);
 
+   step("main");
    catchReturnFromMain(main(argc, argv, envp));
 }
