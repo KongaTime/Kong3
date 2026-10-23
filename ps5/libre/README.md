@@ -17,6 +17,7 @@ console. Not from the code it replaces.
 | The heap in direct memory: dlmalloc's mspaces (MIT-0, `third_party/dlmalloc`, 32-byte blocks) in a 64 GiB range, a few arenas, statistics | `memory/heap.c` (`include/libre/heap.h`) | the platform's `heap.o` and its `mspace.o` | proven on the console (build 160): GTA IV, the heap flat at 2262 MiB |
 | The malloc family the link wraps (malloc to getline), with a tracker interface | `memory/wrap.c` | the platform's `heap_wrap.o` and PS5_RPCS3's `ps5_alloc_track.cpp` wraps | proven on the console (build 160) |
 | Threads: stacks of 2 MiB or more in direct memory with a guard, given back at join or (detached) after the end; thread_local destructors at a thread's end (`__cxa_thread_atexit_impl`) | `threads/threads.c` (`include/libre/threads.h`) | the platform's `threads.o`, `cxa.o` and `placement.o` | proven on the console (build 161): GTA V played and left, then Web of Shadows |
+| Directories (`opendir` to `closedir`, `dirfd`) and the `*at` calls (`openat`, `fstatat`, `unlinkat`, `mkdirat`, `renameat`, `fchmodat`), on the path calls | `files/dir.c` | the platform's `directory.o` (still linked for `libc.o` until it goes) | proven on the console (build 162): 12 games listed, a save written, listed and deleted with its backup |
 
 `ps5/tools/link-title.sh` takes these by default since build 157 (`PS5_LIBRE_START=0`
 takes PS5_Vulkan's instead). Phase 1 of

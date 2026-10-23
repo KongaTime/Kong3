@@ -64,7 +64,8 @@ radv_link_recipe "$vulkan" "$sdk" "$archive" || exit 2
 [[ $libre_start == 1 ]] && radv_linker_script=(-T "$ps5/libre/ld/ps5-title.ld")
 # The libc names the PS5 libre layer implements (ps5/libre/: MIT), bound to its
 # libre_<name> in place of the platform layer's ps5_<name> the recipe binds
-libre_bound=(__cxa_thread_atexit_impl)
+libre_bound=(__cxa_thread_atexit_impl
+    opendir fdopendir readdir rewinddir dirfd closedir openat fstatat unlinkat mkdirat renameat fchmodat)
 for i in "${!radv_link_flags[@]}"; do
     for name in "${libre_bound[@]}"; do
         [[ ${radv_link_flags[$i]} == "--defsym=$name=ps5_$name" ]] && radv_link_flags[$i]="--defsym=$name=libre_$name"
