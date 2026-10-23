@@ -9,10 +9,11 @@ console. Not from the code it replaces.
 
 | Part | File | Replaces | Status |
 | --- | --- | --- | --- |
-| The entry point: FreeBSD's start block, the C library's set-up, the init and fini arrays, IEEE floating point, `main`, `catchReturnFromMain` | `crt/start.c` | PS5_Vulkan's `app_crt.cpp` and the platform's `ps5_fp_ieee` | runs on the console: build 155 with PS5_Vulkan's `libc.prx` starts, runs every step to `main` and RPCS3 |
-| The memory layout: four 16 KiB-aligned segments, the unwind tables' bounds | `ld/ps5-title.ld` | PS5_Vulkan's `ps5-pie.ld` and `ps5-pie-unwind.ld` | built: the same segments, addresses and section groups as build 150's |
-| The symbol policy: operator new and delete kept inside | `ld/title-symbols.map` | PS5_Vulkan's `app-symbols.map` | built |
-| `sce_module/libc.prx` | `tools/make-libc-prx.py` | PS5_Vulkan's generated module | loads past the loader's checks since the build ID's note (klog); the minimal module then stops the console while it loads: being narrowed down from the console's module, which loads |
+| The entry point: FreeBSD's start block, the C library's `_init_env`, the init and fini arrays, IEEE floating point, `main`, `catchReturnFromMain` | `crt/start.c` | PS5_Vulkan's `app_crt.cpp` and the platform's `ps5_fp_ieee` | proven on the console (build 156, `PS5_LIBRE_START=1`): starts, runs to the launcher, ends through the shell |
+| The memory layout: four 16 KiB-aligned segments, the unwind tables' bounds | `ld/ps5-title.ld` | PS5_Vulkan's `ps5-pie.ld` and `ps5-pie-unwind.ld` | proven on the console (build 156): the same segments, addresses and section groups as build 150's |
+| The symbol policy: operator new and delete kept inside | `ld/title-symbols.map` | PS5_Vulkan's `app-symbols.map` | proven on the console (build 156) |
+| `sce_module/libc.prx` | `tools/make-libc-prx.py` | PS5_Vulkan's generated module | proven on the console (build 156): its imports, the C library's set-up from its preinit array, and the build ID's note the loader requires |
 
-`ps5/tools/link-title.sh` takes these with `PS5_LIBRE_START=1`; the default stays
-the old start-up until the new one has run on the console.
+`ps5/tools/link-title.sh` takes these with `PS5_LIBRE_START=1`. Phase 1 of
+[`docs/distributable-build.md`](../../docs/distributable-build.md) is proven with
+them (build 156); the default is still the old start-up.

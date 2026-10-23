@@ -38,65 +38,6 @@ extern start_function __fini_array_end[] __attribute__((weak, visibility("hidden
 /* This module's handle for __cxa_atexit and __cxa_thread_atexit, as crtbegin defines it */
 void *__dso_handle __attribute__((visibility("hidden"))) = &__dso_handle;
 
-/* What a title's libc.prx does at its start, done here first instead, so the
- * module the title carries needs no imports (ps5/libre/tools/make-libc-prx.py
- * --minimal): three thread callbacks for libkernel, and libkernel's loader handed
- * a heap table with the system C library's malloc, free and posix_memalign in
- * slots 0, 1 and 6 (the title wraps them, so the system's own are the __real_
- * names). Without it the C library fails at its first use, a libkernel file call
- * included: with the minimal libc.prx, build 151 ran until its first file
- * operations and build 154's first diagnostic line (before its set-up, whose
- * lookup of libkernel had failed) never appeared; with the console's libc.prx in
- * place, which does it, build 154 ran. So it comes before anything else */
-extern int _sceKernelSetThreadDtors(void (*callback)(void));
-extern int _sceKernelSetThreadAtexitCount(int (*callback)(void));
-extern int _sceKernelSetThreadAtexitReport(void (*callback)(void));
-extern int _sceKernelRtldSetApplicationHeapAPI(void *table[]);
-extern void *__real_malloc(unsigned long size);
-extern void __real_free(void *pointer);
-extern int __real_posix_memalign(void **out, unsigned long alignment, unsigned long size);
-static void *heap_api[32];
-
-/* Diagnostics for the start-up, until it is proven on the console: a line in
- * /app0/libre-start.txt for each step after the set-up, written with libkernel's
- * own file calls. FreeBSD's O_WRONLY | O_APPEND | O_CREAT */
-extern int sceKernelOpen(const char *path, int flags, int mode);
-extern long sceKernelWrite(int fd, const void *buffer, unsigned long size);
-extern int sceKernelClose(int fd);
-
-static void step(const char *text)
-{
-   unsigned long length = 0;
-   while (text[length])
-      length++;
-   const int fd = sceKernelOpen("/app0/libre-start.txt", 0x1 | 0x8 | 0x200, 0666);
-   if (fd < 0)
-      return;
-   (void)sceKernelWrite(fd, text, length);
-   (void)sceKernelWrite(fd, "\n", 1);
-   (void)sceKernelClose(fd);
-}
-
-static void thread_callback(void)
-{
-}
-
-static int thread_atexit_count(void)
-{
-   return 0;
-}
-
-static void libc_setup(void)
-{
-   (void)_sceKernelSetThreadDtors(thread_callback);
-   (void)_sceKernelSetThreadAtexitCount(thread_atexit_count);
-   (void)_sceKernelSetThreadAtexitReport(thread_callback);
-   heap_api[0] = (void *)__real_malloc;
-   heap_api[1] = (void *)__real_free;
-   heap_api[6] = (void *)__real_posix_memalign;
-   (void)_sceKernelRtldSetApplicationHeapAPI(heap_api);
-}
-
 /* Called with main's result. The template's PS5 layer defines its own, which asks
  * the shell to close the title (a title never calls exit: ps5/src/platform.c);
  * this one only stands in where nothing else does */
@@ -158,18 +99,13 @@ __attribute__((noreturn, visibility("default"))) void _start(void *start_block, 
    char **envp = argv ? argv + argc + 1 : 0;
 
    floating_point_ieee();
-   libc_setup();
-   step("---- start, the set-up done");
-   step("_init_env");
    _init_env(start_block);
    if (at_exit)
       (void)atexit(at_exit);
    (void)atexit(run_fini_array);
 
-   step("preinit and init arrays");
    run_array(__preinit_array_start, __preinit_array_end);
    run_array(__init_array_start, __init_array_end);
 
-   step("main");
    catchReturnFromMain(main(argc, argv, envp));
 }

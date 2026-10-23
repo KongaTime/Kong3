@@ -24,9 +24,10 @@
 #   id and the module's, each a letter of base64's alphabet. Its imports are bound
 #   by the loader at load, through jump-slot relocations on zeroed slots.
 #
-# Its start function does what the console's C library expects of a title's
-# libc.prx (with none, the title crashed in its first file operations: build 151
-# with experiment 1, on my console): it registers three thread callbacks with
+# Its set-up, run from its preinit array (or its start function), does what the
+# console's C library expects of a title's libc.prx (with this module, build 155
+# runs to its launcher and ends through the shell, on my console): it registers
+# three thread callbacks with
 # libkernel (_sceKernelSetThreadDtors with one that returns,
 # _sceKernelSetThreadAtexitCount with one that returns 0,
 # _sceKernelSetThreadAtexitReport with one that returns), and hands libkernel's
@@ -218,13 +219,12 @@ def read_exports(path):
     return exports
 
 
-def build(exports, comment, setup_from="init", threads=True, heap=True, minimal=False):
-    # minimal: no imports, no set-up, no stand-ins (the title's start-up does the
-    # set-up: ps5/libre/crt/start.c); what experiment 1 proved the loader accepts
-    imports = [] if minimal else IMPORTS
-    import_from = [] if minimal else IMPORT_FROM
-    if minimal:
-        setup_from, threads, heap = "init", False, False
+def build(exports, comment, setup_from="init", threads=True, heap=True):
+    # Always with its imports: a module with none (no needed module at all, not even
+    # libkernel) shut my console off while it loaded, twice (klog ends at the
+    # title's EXEC), where the same module with them runs the title (build 155)
+    imports = IMPORTS
+    import_from = IMPORT_FROM
     module_param = struct.pack("<QIIQQ", 0x20, 0x3C13F4BF, 3, 0x0200000908050001, 1)
     data = bytearray(HEAP_TABLE + HEAP_TABLE_SIZE)
     data[MODULE_PARAM:MODULE_PARAM + 0x20] = module_param
@@ -259,7 +259,7 @@ def build(exports, comment, setup_from="init", threads=True, heap=True, minimal=
         import_index[key] = len(symbols)
         symbols.append((string(name), (1 << 4) | 2, 0, 0, 0, 0))
         names.append(name)
-    for function, binding in ([] if minimal else SETJMP_EXPORTS):
+    for function, binding in SETJMP_EXPORTS:
         name = f"{nid(function)}#{BASE64[EXPORT_LIBRARIES[1][1]]}#A"
         symbols.append((string(name), (binding << 4) | 2, 0, 1, STAND_IN, 16))
         names.append(name)
@@ -407,12 +407,9 @@ def main():
                         help="where the set-up runs: the start function, or the preinit array (the default)")
     parser.add_argument("--no-threads", action="store_true", help="leave out the thread callbacks (an experiment)")
     parser.add_argument("--no-heap", action="store_true", help="leave out the heap table (an experiment)")
-    parser.add_argument("--minimal", action="store_true",
-                        help="no imports, no set-up, no stand-ins: the title's start-up does the set-up")
     arguments = parser.parse_args()
     module, exported, imported = build(read_exports(arguments.exports), arguments.comment,
-                                       arguments.setup_from, not arguments.no_threads, not arguments.no_heap,
-                                       arguments.minimal)
+                                       arguments.setup_from, not arguments.no_threads, not arguments.no_heap)
     with open(arguments.out, "wb") as f:
         f.write(module)
     print(f"wrote {arguments.out}: {len(module)} bytes, {exported} exported, {imported} imported")

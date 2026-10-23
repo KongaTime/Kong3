@@ -123,8 +123,8 @@ for asset in icon0.png pic0.dds pic1.dds snd0.at9; do
 done
 if [[ $libre_start == 1 ]]; then
     # The title's own module, written and signed here (ps5/libre/tools/make-libc-prx.py):
-    # no imports, the set-up done by the start-up instead
-    python3 "$ps5/libre/tools/make-libc-prx.py" --minimal --out "$work/link/libc.raw.elf" > /dev/null
+    # its imports, and the C library's set-up from its preinit array
+    python3 "$ps5/libre/tools/make-libc-prx.py" --out "$work/link/libc.raw.elf" > /dev/null
     "$tool" self --sign --in "$work/link/libc.raw.elf" --out "$app/sce_module/libc.prx" > /dev/null
 else
     (cd "$vulkan/runtime" && sha256sum --check --strict --quiet libc.prx.sha256)
