@@ -10,7 +10,7 @@
  */
 #include "platform.h"
 
-#include <ps5platform/klog.h>
+#include <libre/klog.h>
 
 #include <pthread.h>
 #include <stdarg.h>
@@ -49,7 +49,7 @@ platform_init(const char *title_name)
 {
    static char prefix[64];
    snprintf(prefix, sizeof(prefix), "[%s] ", title_name);
-   const int captured = ps5_klog_capture_stderr(prefix);
+   const int captured = libre_klog_capture_stderr(prefix);
    say("starts (standard error to klog: %s)", captured == 0 ? "yes" : "no");
    /* The shell's splash covers the title's frames until it is dismissed. */
    say("splash dismissed: %d", sceSystemServiceHideSplashScreen());

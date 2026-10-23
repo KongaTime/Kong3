@@ -22,6 +22,15 @@ target_sources(samples PRIVATE ${ROOT}/ps5/libre/threads/threads.c)
 target_sources(samples PRIVATE ${ROOT}/ps5/libre/files/dir.c ${ROOT}/ps5/libre/files/files.c)
 # And the C library functions a title lacks (link-title.sh binds their names)
 target_sources(samples PRIVATE ${ROOT}/ps5/libre/libc/misc.c ${ROOT}/ps5/libre/net/net.c)
+# And regular expressions on musl's engine (third_party/musl-regex, MIT, unchanged:
+# its own regex.h there comes first), open_memstream on the fflush and fclose
+# PS5_Vulkan's recipe wraps, and standard error to klog (libre/klog.h)
+set(libre_musl_regex ${ROOT}/ps5/libre/third_party/musl-regex/regcomp.c
+	${ROOT}/ps5/libre/third_party/musl-regex/regexec.c ${ROOT}/ps5/libre/third_party/musl-regex/tre-mem.c)
+target_sources(samples PRIVATE ${ROOT}/ps5/libre/libc/regex.c ${ROOT}/ps5/libre/libc/memstream.c
+	${ROOT}/ps5/libre/libc/klog.c ${libre_musl_regex})
+set_source_files_properties(${libre_musl_regex} PROPERTIES
+	INCLUDE_DIRECTORIES ${ROOT}/ps5/libre/third_party/musl-regex COMPILE_OPTIONS "-w")
 set_source_files_properties(${ROOT}/ps5/libre/memory/wrap.c PROPERTIES COMPILE_OPTIONS "-fno-omit-frame-pointer")
 target_include_directories(samples PRIVATE ${ROOT}/ps5/libre/include)
 # stb_image's code comes once, from RPCS3 (rpcs3/Emu/stb_image.cpp, v2.30);

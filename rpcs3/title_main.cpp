@@ -22,8 +22,11 @@
 
 #include "platform.h"
 
+#include <regex.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
+#include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
@@ -56,7 +59,7 @@ namespace {
 
 /* This build's number, which the launcher shows and the trace and RPCS3.log
  * start with: one more for each build that goes to the console */
-const char *const titleBuild = "165";
+const char *const titleBuild = "168";
 
 /* The console's buttons as the PS3's: OPTIONS is START, the touch pad's click
  * SELECT; the PS button stays the shell's */
@@ -115,6 +118,54 @@ void trace(const char *line)
 	say("RPCS3: %s", line);
 }
 
+/* The PS5 libre layer's regular expressions and memory streams (builds 166 to 168),
+ * tried once at the start: what each gave, to the trace */
+void checkLibre()
+{
+	char line[256];
+	regex_t re;
+	int result = regcomp(&re, "^([a-z]+)-([0-9]+)$", REG_EXTENDED);
+	regmatch_t found[3]{};
+	if (result == 0) {
+		result = regexec(&re, "build-168", 3, found, 0);
+		regmatch_t range[1] = { { 6, 11 } };
+		const int ranged = regexec(&re, "xxxxxxabc-1yyy", 1, range, REG_STARTEND);
+		snprintf(line, sizeof line,
+			"libre: regex %d, groups %lld-%lld %lld-%lld, REG_STARTEND %d at %lld-%lld (expected 0, 0-5 6-9, 0 at 6-11)",
+			result, (long long)found[1].rm_so, (long long)found[1].rm_eo, (long long)found[2].rm_so,
+			(long long)found[2].rm_eo, ranged, (long long)range[0].rm_so, (long long)range[0].rm_eo);
+		regfree(&re);
+	} else {
+		snprintf(line, sizeof line, "libre: regcomp failed: %d", result);
+	}
+	trace(line);
+
+	char *buffer = nullptr;
+	size_t size = 0;
+	if (FILE *stream = open_memstream(&buffer, &size)) {
+		fprintf(stream, "hello %d", 168);
+		fflush(stream);
+		const size_t flushed = size;
+		fprintf(stream, " and more");
+		const int closed = fclose(stream);
+		snprintf(line, sizeof line, "libre: open_memstream %zu at fflush, %zu '%s' at fclose (%d) (expected 9, 18 'hello 168 and more', 0)",
+			flushed, size, buffer ? buffer : "(null)", closed);
+		free(buffer);
+	} else {
+		snprintf(line, sizeof line, "libre: open_memstream failed: errno %d", errno);
+	}
+	trace(line);
+
+	/* stderr on the klog pipe (libre/klog.h), and descriptor 2 too if the console let it be */
+	struct stat status{};
+	const bool fd2Pipe = fstat(STDERR_FILENO, &status) == 0 && S_ISFIFO(status.st_mode);
+	const int stderrFd = fileno(stderr);
+	const bool streamPipe = fstat(stderrFd, &status) == 0 && S_ISFIFO(status.st_mode);
+	snprintf(line, sizeof line, "libre: stderr on the klog pipe: %s (descriptor %d); descriptor 2 too: %s",
+		streamPipe ? "yes" : "no", stderrFd, fd2Pipe ? "yes" : "no");
+	trace(line);
+}
+
 } // namespace
 
 // RADV's shader cache (Mesa's multipart database, /app0/radv-shader-cache)
@@ -144,6 +195,7 @@ extern "C" int ps5_title_main(void)
 		chmod(tracePath, 0666);
 	}
 	trace((std::string("title: start, build ") + titleBuild).c_str());
+	checkLibre();
 	std::string boot;
 	if (std::ifstream file{"/app0/rpcs3-boot.txt"}) {
 		std::getline(file, boot);

@@ -100,16 +100,17 @@ def main():
     write_text(out / "title/LICENSE.md", ROOT, rev, "LICENSE.md")
     libraries = [("external/imgui/LICENSE.txt", "imgui-LICENSE.txt"), ("external/ktx/LICENSE.md", "ktx-LICENSE.md"),
                  ("external/ktx/NOTICE.md", "ktx-NOTICE.md"), ("external/tinygltf/LICENSE", "tinygltf-LICENSE"),
-                 ("ps5/third_party/volk/LICENSE.md", "volk-LICENSE.md")]
+                 ("ps5/third_party/volk/LICENSE.md", "volk-LICENSE.md"),
+                 ("ps5/libre/third_party/musl-regex/COPYRIGHT", "musl-regex-COPYRIGHT.txt")]
     for path, dest in libraries:
         write_text(out / "title" / dest, ROOT, rev, path)
     glm = git(ROOT, "ls-tree", rev, "external/glm").split()[2]
     parts.append(dict(
         id="title", name=f"{name}: its program, the foundation (Sascha Willems' Vulkan examples and base class, the PS5 layer) "
                          "and the libraries in its tree (Dear ImGui, libktx, tinygltf with stb_image and nlohmann json, "
-                         "volk, the Vulkan headers, glm)",
-        licence="MIT (the title, the examples, Dear ImGui, tinygltf, volk, glm); Apache-2.0 (libktx); "
-                "Apache-2.0 OR MIT (the Vulkan headers)",
+                         "volk, the Vulkan headers, glm), and in the PS5 libre layer (ps5/libre) musl's regular expressions and dlmalloc",
+        licence="MIT (the title, the examples, Dear ImGui, tinygltf, volk, glm, musl's regular expressions); "
+                "MIT-0 (dlmalloc); Apache-2.0 (libktx); Apache-2.0 OR MIT (the Vulkan headers)",
         copyright=["Copyright (c) 2016-2026 Sascha Willems", "Copyright (C) 2026 Mihawk", "and each library's authors"],
         artifacts=["eboot.bin", "shaders/"], texts="licenses/title/",
         source=dict(kind="git", path=str(ROOT), remote=remote, revision=rev, dirty=dirty,
