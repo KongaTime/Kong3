@@ -74,8 +74,11 @@ common=(-G Ninja -DCMAKE_BUILD_TYPE=Release
 if [[ ! -x $host_build/bin/llvm-tblgen ]]; then
     echo "==> [llvm] host table generators (${revision:0:11})"
     mkdir -p "$host_build"
+    # Any host clang builds them: clang-20 where it is installed, else clang
+    host_cc=clang-20 host_cxx=clang++-20
+    command -v "$host_cc" > /dev/null || host_cc=clang host_cxx=clang++
     cmake -S "$llvm" -B "$host_build" "${common[@]}" \
-        -DCMAKE_C_COMPILER=clang-20 -DCMAKE_CXX_COMPILER=clang++-20 \
+        -DCMAKE_C_COMPILER="$host_cc" -DCMAKE_CXX_COMPILER="$host_cxx" \
         >"$host_build/configure.log" 2>&1 || {
         echo "error: host configure failed: $host_build/configure.log" >&2; exit 1; }
     ninja -C "$host_build" llvm-tblgen llvm-min-tblgen >"$host_build/build.log" 2>&1 || {

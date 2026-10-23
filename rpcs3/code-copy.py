@@ -21,7 +21,7 @@ PF_X = 1
 
 
 def anchor_address(elf):
-    for nm in ("llvm-nm", "llvm-nm-20", "llvm-nm-19"):
+    for nm in ("llvm-nm", "llvm-nm-21", "llvm-nm-20", "llvm-nm-19"):
         if shutil.which(nm):
             listing = subprocess.run([nm, elf], check=True, capture_output=True, text=True).stdout
             for line in listing.splitlines():
