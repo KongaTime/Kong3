@@ -63,7 +63,7 @@ About 170 functions to write.
    the directory and POSIX functions, `open_memstream`, `localeconv` and the `_l`
    locale functions, klog, the floating-point mode. Proof: both test games, saves,
    the launcher's every page.
-4. **The shareable build:** a build switch that leaves out the Lossless Scaling port
+4. **The shareable build** (done, build 171: PS5_RPCS3's PS5_GPL3_FRAME_GENERATION, off by default in rpcs3/build-rpcs3.sh; ps5/tools/shareable.py, and package-release.py --shareable): a build switch that leaves out the Lossless Scaling port
    and MihawkGen (the title's own frame generation stays); PS5_RPCS3 including no
    GPL header; a release check that fails on any GPL-3.0 object, symbol or file.
 5. **Packaging and notices:** confirm the native tool adds no code to the title (or

@@ -17,9 +17,10 @@ link staged licenses/components.json) and writes:
   SHA256SUMS            the ZIP's and the archives' digests
 
 It refuses a title whose parts were built from uncommitted source (the notices
-record "dirty"), and a folder holding anything a release must never carry (a test
-file, a screenshot, klog, .env). The release itself (tag, GitHub release, read-back)
-follows skills/ps5-release.
+record "dirty"), with --shareable one with anything GPL-3.0-or-later in it (the
+notices list each part ps5/tools/shareable.py finds), and a folder holding anything
+a release must never carry (a test file, a screenshot, klog, .env). The release
+itself (tag, GitHub release, read-back) follows skills/ps5-release.
 
 Copyright (C) 2026 Mihawk
 SPDX-License-Identifier: MIT
@@ -96,6 +97,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("tag")
     parser.add_argument("--date", default=datetime.date.today().isoformat())
+    parser.add_argument("--shareable", action="store_true",
+                        help="refuse a title with anything GPL-3.0-or-later in it (ps5/tools/shareable.py)")
     args = parser.parse_args()
     when = datetime.date.fromisoformat(args.date)
 
@@ -106,6 +109,10 @@ def main():
     dirty = [p["id"] for p in parts if p["source"].get("dirty")]
     if dirty:
         raise SystemExit(f"built from uncommitted source: {', '.join(dirty)}; commit, rebuild, then package")
+    gpl3 = [p["id"] for p in parts if "GPL-3.0" in p["licence"]]
+    if args.shareable and gpl3:
+        subprocess.run([sys.executable, str(PS5 / "tools/shareable.py"), str(ROOT / "build/ps5")])
+        raise SystemExit(f"not shareable: GPL-3.0-or-later parts {', '.join(gpl3)} (docs/distributable-build.md)")
     found = [str(p.relative_to(folder)) for p in folder.rglob("*") if p.name in NEVER]
     if found:
         raise SystemExit(f"the title folder holds what a release never carries: {found}")

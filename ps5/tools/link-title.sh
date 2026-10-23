@@ -42,10 +42,12 @@ cc() { PS5_PAYLOAD_SDK="$sdk" sh "$vulkan/tooling/prospero-clang18" "$@"; }
 # console with build 156; PS5_LIBRE_START=0 takes PS5_Vulkan's instead
 libre_start=${PS5_LIBRE_START:-1}
 if [[ $libre_start == 1 ]]; then
-    cc -std=c11 -O2 -fno-stack-protector -c "$ps5/libre/crt/start.c" -o "$work/link/obj/app_crt.o"
+    crt_source="$ps5/libre/crt/start.c"
+    cc -std=c11 -O2 -fno-stack-protector -c "$crt_source" -o "$work/link/obj/app_crt.o"
     symbol_policy="$ps5/libre/ld/title-symbols.map"
 else
-    cc -std=c++20 -O2 -fno-exceptions -fno-rtti -c "$native/app_crt.cpp" -o "$work/link/obj/app_crt.o"
+    crt_source="$native/app_crt.cpp"
+    cc -std=c++20 -O2 -fno-exceptions -fno-rtti -c "$crt_source" -o "$work/link/obj/app_crt.o"
     symbol_policy="$native/app-symbols.map"
 fi
 # RADV calls AGC, which the SDK has no stubs for: these name its imports.
@@ -62,6 +64,19 @@ stub libSceAgcDriver vendor/ps5/sdk/stubs/agc_driver_canary_link_stub.c
 source "$vulkan/tools/radv-link.sh"
 radv_link_recipe "$vulkan" "$sdk" "$archive" || exit 2
 [[ $libre_start == 1 ]] && radv_linker_script=(-T "$ps5/libre/ld/ps5-title.ld")
+# What the link takes beside the objects, for ps5/tools/shareable.py: each part
+# PS5_Vulkan's (GPL-3.0-or-later) or the libre layer's
+{
+    printf 'crt %s\nsymbol-policy %s\n' "$crt_source" "$symbol_policy"
+    for i in "${!radv_linker_script[@]}"; do
+        [[ ${radv_linker_script[$i]} == -T ]] && printf 'linker-script %s\n' "${radv_linker_script[$((i + 1))]}"
+    done
+    if [[ $libre_start == 1 ]]; then
+        printf 'libc.prx %s\n' "$ps5/libre/tools/make-libc-prx.py"
+    else
+        printf 'libc.prx %s\n' "$vulkan/runtime/libc.prx"
+    fi
+} > "$work/link/parts.txt"
 # The libc names the PS5 libre layer implements (ps5/libre/: MIT), bound to its
 # libre_<name> in place of the platform layer's ps5_<name> the recipe binds
 # (the recipe's flags, and the title's own, which come with its objects)
@@ -99,7 +114,7 @@ if [[ " ${radv_link_flags[*]} " != *" --defsym=localeconv=libre_localeconv "* ]]
     radv_link_flags+=(--defsym=localeconv=libre_localeconv --version-script "$work/link/localeconv-local.map")
 fi
 "$sdk/bin/prospero-lld" "${radv_linker_script[@]}" --eh-frame-hdr "${radv_link_flags[@]}" \
-    --version-script "$symbol_policy" --exclude-libs=ALL \
+    --version-script "$symbol_policy" --exclude-libs=ALL --why-extract="$work/link/why-extract.txt" \
     -e _start -o "$work/link/llvm-pie.elf" \
     "$work/link/obj/app_crt.o" "${objects[@]}" \
     "$work/link/stubs/libSceAgc.so" "$work/link/stubs/libSceAgcDriver.so" \
@@ -168,4 +183,6 @@ archive_revision=$(sed -n 's/^revision: //p' "$(dirname "$(dirname "$archive")")
 printf '==> %s: %s (eboot.bin %s bytes; %d samples; RADV %s)\n' "$title_id" "$app" \
     "$(stat -c %s "$app/eboot.bin")" "${#samples[@]}" "${archive_revision:0:11}"
 # The notices beside eboot.bin: LEGAL.txt and licenses/, each part with its revision
-python3 "$ps5/tools/stage-notices.py" "$app" "$vulkan" "$archive"
+python3 "$ps5/tools/stage-notices.py" "$app" "$vulkan" "$archive" "$work"
+# Whether it can be shared: what in it is GPL-3.0-or-later (docs/distributable-build.md)
+python3 "$ps5/tools/shareable.py" "$work" | head -1 || true
