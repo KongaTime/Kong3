@@ -11,8 +11,12 @@
 
 target_sources(samples PRIVATE ${ROOT}/rpcs3/title_main.cpp)
 # The PS5 libre layer's memory (ps5/libre/: MIT): RPCS3's virtual memory and
-# shared memory (PS5_RPCS3's rpcs3/util/vm_native_ps5.cpp)
-target_sources(samples PRIVATE ${ROOT}/ps5/libre/memory/vm.c)
+# shared memory (PS5_RPCS3's rpcs3/util/vm_native_ps5.cpp), and the title's heap
+# in direct memory with the malloc family the link wraps onto it. The wraps keep
+# their frame pointers: the memory tracker (PS5_RPCS3's ps5_heap_track.cpp)
+# reads the allocating code's return addresses through them
+target_sources(samples PRIVATE ${ROOT}/ps5/libre/memory/vm.c ${ROOT}/ps5/libre/memory/heap.c ${ROOT}/ps5/libre/memory/wrap.c)
+set_source_files_properties(${ROOT}/ps5/libre/memory/wrap.c PROPERTIES COMPILE_OPTIONS "-fno-omit-frame-pointer")
 target_include_directories(samples PRIVATE ${ROOT}/ps5/libre/include)
 # stb_image's code comes once, from RPCS3 (rpcs3/Emu/stb_image.cpp, v2.30);
 # the foundation's glTF loader uses it instead of its own (v2.21)

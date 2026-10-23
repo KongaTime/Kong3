@@ -14,6 +14,8 @@ console. Not from the code it replaces.
 | The symbol policy: operator new and delete kept inside | `ld/title-symbols.map` | PS5_Vulkan's `app-symbols.map` | proven on the console (build 156) |
 | `sce_module/libc.prx` | `tools/make-libc-prx.py` | PS5_Vulkan's generated module | proven on the console (build 156): its imports, the C library's set-up from its preinit array, and the build ID's note the loader requires |
 | Virtual memory: address ranges, the memory committed in them, shared memory | `memory/vm.c` (`include/libre/vm.h`) | the platform's `shm.o` | proven on the console (build 158): GTA IV and Web of Shadows played and left |
+| The heap in direct memory: dlmalloc's mspaces (MIT-0, `third_party/dlmalloc`, 32-byte blocks) in a 64 GiB range, a few arenas, statistics | `memory/heap.c` (`include/libre/heap.h`) | the platform's `heap.o` and its `mspace.o` | proven on the console (build 160): GTA IV, the heap flat at 2262 MiB |
+| The malloc family the link wraps (malloc to getline), with a tracker interface | `memory/wrap.c` | the platform's `heap_wrap.o` and PS5_RPCS3's `ps5_alloc_track.cpp` wraps | proven on the console (build 160) |
 
 `ps5/tools/link-title.sh` takes these by default since build 157 (`PS5_LIBRE_START=0`
 takes PS5_Vulkan's instead). Phase 1 of
