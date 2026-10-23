@@ -23,6 +23,7 @@ console. Not from the code it replaces.
 | Regular expressions (`regcomp`, `regexec`, `regfree`, `regerror`): FreeBSD's interface, with `REG_PEND`, `REG_NOSPEC` and `REG_STARTEND`, on musl 1.2.5's engine (MIT, `third_party/musl-regex`, unchanged) | `libc/regex.c` | the platform's `regex.o`, `regcomp.o`, `regexec.o` and `tre-mem.o` | proven on the console (build 168): the start's check matched, groups and `REG_STARTEND` |
 | `open_memstream` on a temporary file (`/download0` or `/app0`: a title has no `/tmp` or `/data`, and its anonymous shared memory takes no write past its end), published at the `fflush` and `fclose` the link wraps | `libc/memstream.c` | the platform's `memstream.o` | proven on the console (build 168) |
 | Standard error to klog: `stderr` a stream on a pipe, whose lines a thread hands to `sceKernelDebugOutText` after a prefix (descriptor 2 cannot be moved) | `libc/klog.c` (`include/libre/klog.h`) | the platform's `klog.o` | proven on the console (build 168): 3305 lines of a Web of Shadows run in klog |
+| The C locale and the `_l` functions on it (`newlocale` to `wcsnrtombs_l`, 37 in all, with the rune table libc++'s inline classifiers read, built from the console's own `isw*` and `tow*`), `localeconv` and `nl_langinfo` (`.` the decimal point), the encoding the console's conversions use (UTF-8, though its `MB_CUR_MAX` says 1), no message catalogs; `backtrace` and `backtrace_symbols_fd` on LLVM's libunwind | `libc/locale.c`, `libc/backtrace.c` | the platform's `xlocale.o` and `locale.o`, the last of it the title linked | proven on the console (build 170): libc++'s numbers, streams and ctype, Web of Shadows played |
 | File calls a title lacks or is refused: `access`, `statfs`/`fstatfs`/`statvfs`/`fstatvfs` (fixed figures: the console refuses a title `_fstatfs`), `futimens`/`utimensat`, `link`/`symlink`/`readlink` (no links), `realpath`, `mkstemp`/`mkstemps`, `posix_fallocate`; and `__assert` | `files/files.c`, `libc/misc.c` | the rest of the platform's `posix.o`, which the title no longer links, and 9 of its `libc.o` | proven on the console (build 164): Ratchet & Clank Collection booted, saved and left |
 
 `ps5/tools/link-title.sh` takes these by default since build 157 (`PS5_LIBRE_START=0`
@@ -30,3 +31,6 @@ takes PS5_Vulkan's instead). Phase 1 of
 [`docs/distributable-build.md`](../../docs/distributable-build.md) is proven with
 them: build 156 starts, runs to the launcher, plays God of War: Ascension and ends
 through the shell, on my console.
+
+Since build 170 the title links nothing of the platform layer (`libps5platform.a`):
+phase 3 of [`docs/distributable-build.md`](../../docs/distributable-build.md) is done.

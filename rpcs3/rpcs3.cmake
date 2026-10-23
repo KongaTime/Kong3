@@ -29,6 +29,8 @@ set(libre_musl_regex ${ROOT}/ps5/libre/third_party/musl-regex/regcomp.c
 	${ROOT}/ps5/libre/third_party/musl-regex/regexec.c ${ROOT}/ps5/libre/third_party/musl-regex/tre-mem.c)
 target_sources(samples PRIVATE ${ROOT}/ps5/libre/libc/regex.c ${ROOT}/ps5/libre/libc/memstream.c
 	${ROOT}/ps5/libre/libc/klog.c ${libre_musl_regex})
+# And the C locale with the _l functions on it, and backtraces (link-title.sh binds them)
+target_sources(samples PRIVATE ${ROOT}/ps5/libre/libc/locale.c ${ROOT}/ps5/libre/libc/backtrace.c)
 set_source_files_properties(${libre_musl_regex} PROPERTIES
 	INCLUDE_DIRECTORIES ${ROOT}/ps5/libre/third_party/musl-regex COMPILE_OPTIONS "-w")
 set_source_files_properties(${ROOT}/ps5/libre/memory/wrap.c PROPERTIES COMPILE_OPTIONS "-fno-omit-frame-pointer")

@@ -74,7 +74,11 @@ libre_bound=(__cxa_thread_atexit_impl
     posix_fallocate __assert
     accept4 getaddrinfo freeaddrinfo gai_strerror getnameinfo if_nametoindex if_indextoname if_nameindex
     if_freenameindex in6addr_any
-    regcomp regexec regfree regerror open_memstream)
+    regcomp regexec regfree regerror open_memstream
+    newlocale freelocale localeconv localeconv_l nl_langinfo nl_langinfo_l strtod_l strtof_l strtold_l strtoll_l
+    strtoull_l snprintf_l sscanf_l asprintf_l strcoll_l strxfrm_l strftime_l wcscoll_l wcsxfrm_l btowc_l wctob_l
+    iswctype_l mbrlen_l mbrtowc_l mbsrtowcs_l mbsnrtowcs_l wcrtomb_l wcsnrtombs_l mbtowc_l ___mb_cur_max_l
+    ___runetype_l ___tolower_l ___toupper_l __runes_for_locale catopen catgets catclose backtrace backtrace_symbols_fd)
 for name in "${libre_bound[@]}"; do
     for i in "${!radv_link_flags[@]}"; do
         [[ ${radv_link_flags[$i]} == "--defsym=$name=ps5_$name" ]] && radv_link_flags[$i]="--defsym=$name=libre_$name"
@@ -87,18 +91,12 @@ done
 # with PS5_Vulkan's, an empty range (dladdr then finds nothing)
 [[ $libre_start == 1 ]] || radv_link_flags+=(--defsym=__libre_image_start=_start --defsym=__libre_image_end=_start)
 # localeconv in the C locale, '.' the decimal point (the console's gives none, and
-# tinygltf's JSON parser then read 0.62 as 0): the platform layer's since SDK fork
-# fa69d00 (tools/setup-sdk.sh's pin is never older), bound by PS5_Vulkan's recipe
-# since its 6a6dfa6. With an older recipe the title binds it here, kept local as
-# the recipe keeps its bound names. The symbol listing is read whole before it
-# is searched: piped into grep -q under pipefail, llvm-nm's SIGPIPE made the
-# found symbol a miss about half the time once the archive grew (SDK adc8dd7).
-platform_has_localeconv=false
-grep -q " T ps5_localeconv$" <<<"$("$sdk/bin/llvm-nm" --defined-only "$sdk/target/lib/libps5platform.a" 2>/dev/null)" &&
-    platform_has_localeconv=true
-if $platform_has_localeconv && [[ " ${radv_link_flags[*]} " != *" --defsym=localeconv=ps5_localeconv "* ]]; then
+# tinygltf's JSON parser then read 0.62 as 0): the libre layer's (libc/locale.c).
+# A recipe that binds it binds it to the platform layer's, rebound above; one that
+# does not, the title binds here, kept local as the recipe keeps its bound names
+if [[ " ${radv_link_flags[*]} " != *" --defsym=localeconv=libre_localeconv "* ]]; then
     printf '{\n    local:\n        localeconv;\n};\n' > "$work/link/localeconv-local.map"
-    radv_link_flags+=(--defsym=localeconv=ps5_localeconv --version-script "$work/link/localeconv-local.map")
+    radv_link_flags+=(--defsym=localeconv=libre_localeconv --version-script "$work/link/localeconv-local.map")
 fi
 "$sdk/bin/prospero-lld" "${radv_linker_script[@]}" --eh-frame-hdr "${radv_link_flags[@]}" \
     --version-script "$symbol_policy" --exclude-libs=ALL \
@@ -109,9 +107,8 @@ fi
     --as-needed "$sdk"/target/lib/*.so
 # A title whose localeconv is still the console's reads every glTF fraction as 0
 # (black materials, models scaled to nothing): refuse it here, not on the console
-if $platform_has_localeconv &&
-        grep -q " U localeconv$" <<<"$("$sdk/bin/llvm-nm" "$work/link/llvm-pie.elf" 2>/dev/null)"; then
-    echo "link-title.sh: localeconv is not bound to the platform layer's ps5_localeconv" >&2
+if grep -q " U localeconv$" <<<"$("$sdk/bin/llvm-nm" "$work/link/llvm-pie.elf" 2>/dev/null)"; then
+    echo "link-title.sh: localeconv is not bound to the libre layer's libre_localeconv" >&2
     exit 1
 fi
 # A title loads neither libkernel_sys's exports nor libScePosixForWebKit's: an

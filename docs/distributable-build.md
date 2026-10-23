@@ -53,13 +53,13 @@ About 170 functions to write.
 
 ## Phases
 
-1. **Start-up:** the entry point, the linker script and the `libc.prx` generator. Proof:
+1. **Start-up** (done, build 156): the entry point, the linker script and the `libc.prx` generator. Proof:
    the title starts, runs and ends through the shell as now.
-2. **Memory:** the heap in direct memory (on dlmalloc's mspaces), the allocation
+2. **Memory** (done, build 160): the heap in direct memory (on dlmalloc's mspaces), the allocation
    wraps, aligned allocation, shared memory, placement of thread stacks; and a new
    memory tracker in PS5_RPCS3. Proof: an open-world game played 20 minutes with
    the heap flat, as build 150.
-3. **Threads and the C library's gaps:** the thread wraps, thread-exit destructors,
+3. **Threads and the C library's gaps** (done, build 170: the title links nothing of the platform layer): the thread wraps, thread-exit destructors,
    the directory and POSIX functions, `open_memstream`, `localeconv` and the `_l`
    locale functions, klog, the floating-point mode. Proof: both test games, saves,
    the launcher's every page.
