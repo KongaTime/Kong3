@@ -99,6 +99,7 @@ if $configure || [[ ! -f $build/build.ninja ]]; then
         -DPS5_FFMPEG_DIR="$root/.deps/native/ffmpeg-ps5" \
         -DPS5_VOLK_DIR="$root/ps5/third_party/volk" \
         -DPS5_ICONV_DIR="$root/.deps/native/libiconv-ps5" \
+        -DPS5_LIBRE_DIR="$root/ps5/libre" \
         -DUSE_VULKAN=ON -DVulkan_INCLUDE_DIR="$root/external" \
         -DVulkan_LIBRARY="$build/libvulkan-placeholder.a" \
         >"$build/configure.log" 2>&1 || {

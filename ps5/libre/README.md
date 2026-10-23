@@ -13,6 +13,7 @@ console. Not from the code it replaces.
 | The memory layout: four 16 KiB-aligned segments, the unwind tables' bounds | `ld/ps5-title.ld` | PS5_Vulkan's `ps5-pie.ld` and `ps5-pie-unwind.ld` | proven on the console (build 156): the same segments, addresses and section groups as build 150's |
 | The symbol policy: operator new and delete kept inside | `ld/title-symbols.map` | PS5_Vulkan's `app-symbols.map` | proven on the console (build 156) |
 | `sce_module/libc.prx` | `tools/make-libc-prx.py` | PS5_Vulkan's generated module | proven on the console (build 156): its imports, the C library's set-up from its preinit array, and the build ID's note the loader requires |
+| Virtual memory: address ranges, the memory committed in them, shared memory | `memory/vm.c` (`include/libre/vm.h`) | the platform's `shm.o` | proven on the console (build 158): GTA IV and Web of Shadows played and left |
 
 `ps5/tools/link-title.sh` takes these by default since build 157 (`PS5_LIBRE_START=0`
 takes PS5_Vulkan's instead). Phase 1 of
