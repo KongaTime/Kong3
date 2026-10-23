@@ -4,7 +4,7 @@
 - fonts/Inter-<weight>.ttf: static instances of Inter (SIL OFL 1.1, no reserved
   name) cut from its variable font at Google Fonts' pinned commit, subset to Latin;
   RPCS3's overlays draw with stb_truetype, which reads only a font's default instance.
-- launcher/rpcs3-logo.png: the mark and the word RPCS3, drawn at three times the
+- launcher/rpcs3-logo.png: the mark and the title's name, Kong³, drawn at three times the
   overlays' 1280x720 space (the console's 3840x2160). The letters are drawn with
   Orbitron Medium (OFL 1.1); the font itself is not shipped.
 - launcher/mark.png: the mark alone and large, for the intro's white screen. The
@@ -120,10 +120,14 @@ def write_logo(orbitron):
     cap_em = font["OS/2"].sCapHeight / font["head"].unitsPerEm
     pil = ImageFont.truetype(io.BytesIO(buffer.getvalue()), round(cap / cap_em))
 
-    text = "RPCS3"
+    # Kong, then a superscript 3 (the title's name, Kong³): drawn as a smaller 3
+    # with its top on the capitals' line, as Orbitron has no superscripts
+    text = "Kong"
     tracking = round(1.2 * SCALE)
     widths = [pil.getlength(c) for c in text]
-    text_w = math.ceil(sum(widths) + tracking * (len(text) - 1))
+    superscript = ImageFont.truetype(io.BytesIO(buffer.getvalue()), round(cap * 0.6 / cap_em))
+    sup_w = superscript.getlength("3")
+    text_w = math.ceil(sum(widths) + tracking * len(text) + sup_w)
     width = cube + gap + text_w + SCALE
     image = Image.new("RGBA", (width, cube), (0, 0, 0, 0))
     image.alpha_composite(draw_mark(cube), (0, 0))
@@ -134,6 +138,7 @@ def write_logo(orbitron):
     for c, w in zip(text, widths):
         d.text((x, baseline), c, font=pil, fill=(255, 255, 255, 255), anchor="ls")
         x += w + tracking
+    d.text((x, baseline - cap + cap * 0.6), "3", font=superscript, fill=(255, 255, 255, 255), anchor="ls")
 
     folder = ASSETS / "launcher"
     folder.mkdir(parents=True, exist_ok=True)
