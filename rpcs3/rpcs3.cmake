@@ -16,6 +16,8 @@ target_sources(samples PRIVATE ${ROOT}/rpcs3/title_main.cpp)
 # their frame pointers: the memory tracker (PS5_RPCS3's ps5_heap_track.cpp)
 # reads the allocating code's return addresses through them
 target_sources(samples PRIVATE ${ROOT}/ps5/libre/memory/vm.c ${ROOT}/ps5/libre/memory/heap.c ${ROOT}/ps5/libre/memory/wrap.c)
+# And its threads: stacks in direct memory, thread_local destructors at a thread's end
+target_sources(samples PRIVATE ${ROOT}/ps5/libre/threads/threads.c)
 set_source_files_properties(${ROOT}/ps5/libre/memory/wrap.c PROPERTIES COMPILE_OPTIONS "-fno-omit-frame-pointer")
 target_include_directories(samples PRIVATE ${ROOT}/ps5/libre/include)
 # stb_image's code comes once, from RPCS3 (rpcs3/Emu/stb_image.cpp, v2.30);
