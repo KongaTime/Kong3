@@ -16,6 +16,7 @@ title, with what shows it:
   lsfg         Lossless Scaling's frame generation (PS5_RPCS3's RSX/VK/lsfg/)
   mihawkgen    MihawkGen's (PS5_RPCS3's RSX/VK/mihawkgen/, VKFrameGenMihawk.cpp)
   ui-kit       the UI kit (ps5/ui/), in a title that has it
+  wolfssl      wolfSSL (RPCS3's 3rdparty/wolfssl), RPCN's TLS and libcurl's
 
 the frame generators by their objects in the link or their symbols in the ELF
 (PS5_RPCS3's PS5_GPL3_FRAME_GENERATION builds them in). stage-notices.py lists
@@ -39,6 +40,10 @@ FRAME_GENERATOR_MEMBERS = [
     (re.compile(r"^(lsfg_\w+|lossless_dll|vulkan_adapter)\.cpp\.o$"), "lsfg"),
     (re.compile(r"^(fg_common|fg_neural|fg_splat|fg_vulkan|VKFrameGenMihawk)\.cpp\.o$"), "mihawkgen"),
 ]
+# Libraries RPCS3 bundles that are GPL-3.0-or-later: wolfSSL (3rdparty/wolfssl,
+# from 5.7: GPL-3.0, GPL-2.0 only for the projects its LICENSING names), RPCN's
+# TLS and libcurl's
+GPL3_ARCHIVES = {"libwolfssl.a": "wolfssl"}
 # Symbols only their code defines: the Lossless Scaling port's namespace
 # (rex::ui::vulkan::framegen), MihawkGen's fg_* functions and its network
 SYMBOLS = [
@@ -52,6 +57,7 @@ NAMES = {
     "lsfg": "Lossless Scaling's frame generation (PS5_RPCS3's RSX/VK/lsfg/)",
     "mihawkgen": "MihawkGen's frame generation (PS5_RPCS3's RSX/VK/mihawkgen/)",
     "ui-kit": "the UI kit (PS5_VKHomebrewUI, ps5/ui/)",
+    "wolfssl": "wolfSSL (PS5_RPCS3's 3rdparty/wolfssl): RPCN's TLS and libcurl's",
 }
 
 
@@ -140,6 +146,8 @@ def findings(build, nm="llvm-nm"):
             archive, name = Path(member.group(1)).name, member.group(2)
             if archive == "libps5platform.a":
                 add("platform", f"{name} (for {fields[2] if len(fields) > 2 else '?'})")
+            if archive in GPL3_ARCHIVES:
+                add(GPL3_ARCHIVES[archive], f"{archive}({name})")
             for pattern, part in FRAME_GENERATOR_MEMBERS:
                 if pattern.match(name):
                     add(part, f"{archive}({name})")

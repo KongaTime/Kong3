@@ -143,6 +143,14 @@ def main():
                 archive(sdk, src["built_with_sdk"], sname, out / "source" / f"{sname}.tar.gz")
                 sources.append((f"{sname}.tar.gz", "the payload SDK fork the RADV archive was built against",
                                 f'https://github.com/mihawk-99/PS5_PayloadSDK at {src["built_with_sdk"]}'))
+        elif src["kind"] == "tarball":
+            # A release as its makers publish it (GNU libiconv), checked against the
+            # digest the notices recorded at the link
+            tarball = Path(src["path"])
+            if sha256(tarball) != src["sha256"]:
+                raise SystemExit(f"{tarball} is not the tarball the title was built from")
+            shutil.copy2(tarball, out / "source" / tarball.name)
+            sources.append((tarball.name, p["name"], src["url"]))
         else:
             sources.append(("(not attached)", p["name"], f'{src["revision"]}: {src["url"]}'))
     with open(out / "source/SOURCES.txt", "w") as f:

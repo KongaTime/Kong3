@@ -19,6 +19,7 @@ archives and objects its link takes):
 | PS5_Vulkan's linker script (`ps5-pie-unwind.ld`) | the title's layout | GPL-3.0-or-later | rewrite |
 | Lossless Scaling's frame generation port (Eden) | `Emu/RSX/VK/lsfg/` | GPL-3.0-or-later | leave out of the shareable build |
 | MihawkGen | `Emu/RSX/VK/mihawkgen/` | GPL-3.0-or-later | leave out of the shareable build |
+| wolfSSL (RPCS3's 3rdparty, 5.9.4), RPCN's TLS and libcurl's | 36 objects | GPL-3.0-or-later (GPL-2.0 only for the projects its LICENSING names) | leave RPCN out of the shareable build (found in phase 5, build 172) |
 | PS5_RPCS3's `rpcs3/ps5/ps5_alloc_track.cpp` | the memory tracker | the fork's, but written after the platform's `heap_wrap.c` | rewrite from scratch |
 | SDK headers PS5_RPCS3 includes (`ps5platform/kernel.h`, `heap.h`, `libc.h`, `shm.h`) | declarations, inline code | GPL-3.0-or-later | the new layer's own headers |
 
@@ -76,6 +77,16 @@ About 170 functions to write.
    (its PS5 window system MIT). ps5/tools/shareable.py checks the packaging at each
    link: every executable segment out is one in, byte for byte, and the signed
    files carry it verbatim.
+   The notices list every part in the title (build 172): RPCS3, the 22 libraries
+   it bundles that the link takes or whose headers it includes
+   (ps5/tools/thirdparty.py), FFmpeg (configured LGPL) and GNU libiconv, each with
+   its licence texts and its source at the revision built; a release attaches
+   that source (libiconv's release tarball, checked). Taking that inventory found
+   wolfSSL, GPL-3.0-or-later: the shareable build leaves RPCN out (PS5_RPCS3's
+   PS5_RPCN), and shareable.py knows it. Abseil (for Protocol Buffers) and some of
+   glslang's files are Apache-2.0, which the FSF reads as incompatible with
+   GPL-2.0; upstream RPCS3 links them the same way. That reading, and this plan's,
+   wants a lawyer's eye before a release.
 
 When a part's status is uncertain, it does not ship until it is settled. This plan is
 an engineer's reading of the licences, not legal advice.

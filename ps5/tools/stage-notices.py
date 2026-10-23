@@ -22,11 +22,13 @@ link (LINK_DIR, build/ps5): only those the title really has.
 Copyright (C) 2026 Mihawk
 SPDX-License-Identifier: MIT
 """
+import hashlib
 import json
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import textwrap
 from pathlib import Path
 
@@ -34,6 +36,7 @@ PS5 = Path(__file__).resolve().parent.parent
 ROOT = PS5.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import shareable  # noqa: E402
+import thirdparty  # noqa: E402
 
 
 def git(repo, *args):
@@ -191,11 +194,83 @@ def main():
             artifacts=["eboot.bin"], texts=f"licenses/{part}/",
             source=dict(kind="git", path=str(rpcs3), remote=rremote, revision=rrev, dirty=rdirty)))
 
+    # wolfSSL, in a build with RPCN (PS5_RPCS3's PS5_RPCN)
+    if "wolfssl" in gpl3:
+        wolf = ROOT.parent / "PS5_RPCS3/3rdparty/wolfssl/wolfssl"
+        wrev, wdirty, wremote = revision(wolf)
+        for text in ("COPYING", "LICENSING"):
+            write_text(out / "wolfssl" / text, wolf, wrev, text)
+        parts.append(dict(
+            id="wolfssl", name=shareable.NAMES["wolfssl"], licence="GPL-3.0-or-later",
+            copyright=["Copyright (C) wolfSSL Inc."], artifacts=["eboot.bin"], texts="licenses/wolfssl/",
+            source=dict(kind="git", path=str(wolf), remote=wremote, revision=wrev, dirty=wdirty)))
+
+    # RPCS3: my fork, PS5_RPCS3, the title's program
+    rpcs3 = thirdparty.RPCS3
+    rrev, rdirty, rremote = revision(rpcs3)
+    write_text(out / "rpcs3/LICENSE", rpcs3, rrev, "LICENSE")
+    parts.append(dict(
+        id="rpcs3", name="RPCS3, the PlayStation 3 emulator, from my fork PS5_RPCS3 (its PS5 frontend and port)",
+        licence="GPL-2.0-only", copyright=["Copyright (C) the RPCS3 team and contributors (per-file notices in the source)"],
+        artifacts=["eboot.bin", "rpcs3-code.bin"], texts="licenses/rpcs3/",
+        source=dict(kind="git", path=str(rpcs3), remote=rremote, revision=rrev, dirty=rdirty)))
+
+    # The libraries RPCS3 bundles that are in the title, each from its own source
+    for (lib_id, lib_name, lib_licence, texts, folder, _, _), _ in thirdparty.found(link):
+        repo = Path(folder) if folder and Path(folder).is_absolute() else rpcs3 / (folder or "")
+        lrev, ldirty, lremote = revision(repo)
+        extra = {}
+        if lib_id == "llvm":
+            # rpcs3/build-llvm.sh applies the title's patches to the checkout: those
+            # and nothing else are not uncommitted source, and the title's carries them
+            patches = sorted((PS5.parent / "rpcs3/llvm-patches").glob("*.patch"))
+            changed = set(git(repo, "diff", "--name-only").split())
+            patched = set()
+            for patch in patches:
+                patched |= set(git(repo, "apply", "--numstat", str(patch)).split()[2::3])
+            applied = all(subprocess.run(["git", "-C", str(repo), "apply", "--reverse", "--check", str(patch)],
+                                         capture_output=True).returncode == 0 for patch in patches)
+            if ldirty and applied and changed == patched:
+                ldirty = False
+                extra = dict(patches=[f"rpcs3/llvm-patches/{patch.name} (the title's source)" for patch in patches])
+        for text in texts:
+            path = Path(text) if Path(text).is_absolute() else rpcs3 / text
+            write_text(out / lib_id / path.name, repo, lrev, str(path.relative_to(repo)))
+        parts.append(dict(
+            id=lib_id, name=f"{lib_name} (bundled by RPCS3)", licence=lib_licence,
+            copyright=["its authors (licenses/" + lib_id + "/)"],
+            artifacts=["eboot.bin"], texts=f"licenses/{lib_id}/",
+            source=dict(kind="git", path=str(repo), remote=lremote, revision=lrev, dirty=ldirty, **extra)))
+
+    # FFmpeg and GNU libiconv, built for the console by rpcs3/build-ffmpeg.sh and build-libiconv.sh
+    frev, fdirty, fremote = revision(thirdparty.FFMPEG_SRC)
+    for text in ("COPYING.LGPLv2.1", "LICENSE.md"):
+        write_text(out / "ffmpeg" / text, thirdparty.FFMPEG_SRC, frev, text)
+    parts.append(dict(
+        id="ffmpeg", name="FFmpeg (configured LGPL: no --enable-gpl or --enable-nonfree; rpcs3/build-ffmpeg.sh)",
+        licence="LGPL-2.1-or-later", copyright=["the FFmpeg developers"],
+        artifacts=["eboot.bin"], texts="licenses/ffmpeg/",
+        source=dict(kind="git", path=str(thirdparty.FFMPEG_SRC), remote=fremote, revision=frev, dirty=fdirty)))
+    tarball = thirdparty.LIBICONV_TARBALL
+    with tarfile.open(tarball) as tar:
+        member = next(m for m in tar.getmembers() if m.name.endswith("/COPYING.LIB"))
+        (out / "libiconv").mkdir(parents=True, exist_ok=True)
+        (out / "libiconv/COPYING.LIB").write_bytes(tar.extractfile(member).read())
+    parts.append(dict(
+        id="libiconv", name="GNU libiconv (its library; rpcs3/build-libiconv.sh)",
+        licence="LGPL-2.1-or-later", copyright=["Copyright (C) the Free Software Foundation, Inc."],
+        artifacts=["eboot.bin"], texts="licenses/libiconv/",
+        source=dict(kind="tarball", path=str(tarball), revision=tarball.name,
+                    sha256=hashlib.sha256(tarball.read_bytes()).hexdigest(),
+                    url=f"https://ftp.gnu.org/pub/gnu/libiconv/{tarball.name}")))
+
     # The LLVM runtime the SDK links in
+    # Its licence is the LLVM project's: from a PS5_LLVM checkout, or RPCS3's LLVM
     llvm = ROOT.parent / "PS5_LLVM/llvm/LICENSE.TXT"
-    if llvm.exists():
-        (out / "llvm-runtime").mkdir()
-        shutil.copy2(llvm, out / "llvm-runtime/LICENSE.TXT")
+    if not llvm.exists():
+        llvm = thirdparty.RPCS3 / "3rdparty/llvm/llvm/llvm/LICENSE.TXT"
+    (out / "llvm-runtime").mkdir()
+    shutil.copy2(llvm, out / "llvm-runtime/LICENSE.TXT")
     parts.append(dict(
         id="llvm-runtime", name="LLVM libc++, libc++abi, libunwind and compiler-rt builtins (linked into eboot.bin)",
         licence="Apache-2.0 WITH LLVM-exception",
@@ -221,6 +296,8 @@ def main():
     for p in parts:
         src = p["source"]
         where = f'{src["remote"]} at {src["revision"]}' if src["kind"] == "git" else f'{src["revision"]}: {src["url"]}'
+        if src.get("patches"):
+            where += ", with " + ", ".join(src["patches"])
         lines += [p["name"], f'  licence:   {p["licence"]}', f'  copyright: {"; ".join(p["copyright"])}',
                   f'  in:        {", ".join(p["artifacts"])}', f'  texts:     {p["texts"]}', f'  source:    {where}', ""]
     lines += ["The assets: assets/NOTICES.txt, with their licence texts in assets/LICENSES/."]
