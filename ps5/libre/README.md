@@ -14,6 +14,8 @@ console. Not from the code it replaces.
 | The symbol policy: operator new and delete kept inside | `ld/title-symbols.map` | PS5_Vulkan's `app-symbols.map` | proven on the console (build 156) |
 | `sce_module/libc.prx` | `tools/make-libc-prx.py` | PS5_Vulkan's generated module | proven on the console (build 156): its imports, the C library's set-up from its preinit array, and the build ID's note the loader requires |
 
-`ps5/tools/link-title.sh` takes these with `PS5_LIBRE_START=1`. Phase 1 of
+`ps5/tools/link-title.sh` takes these by default since build 157 (`PS5_LIBRE_START=0`
+takes PS5_Vulkan's instead). Phase 1 of
 [`docs/distributable-build.md`](../../docs/distributable-build.md) is proven with
-them (build 156); the default is still the old start-up.
+them: build 156 starts, runs to the launcher, plays God of War: Ascension and ends
+through the shell, on my console.

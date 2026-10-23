@@ -37,9 +37,10 @@ mkdir -p "$work/link/obj" "$work/link/stubs"
 cc() { PS5_PAYLOAD_SDK="$sdk" sh "$vulkan/tooling/prospero-clang18" "$@"; }
 
 # The CRT. The C++ runtime is libc++abi's (the samples throw and catch), as in
-# PS5_Vulkan's CTS title. PS5_LIBRE_START=1 takes the title's own start-up,
-# layout and symbol policy instead (ps5/libre/: MIT, docs/distributable-build.md)
-libre_start=${PS5_LIBRE_START:-0}
+# PS5_Vulkan's CTS title. The start-up, layout, symbol policy and libc.prx are
+# the title's own (ps5/libre/: MIT, docs/distributable-build.md), proven on my
+# console with build 156; PS5_LIBRE_START=0 takes PS5_Vulkan's instead
+libre_start=${PS5_LIBRE_START:-1}
 if [[ $libre_start == 1 ]]; then
     cc -std=c11 -O2 -fno-stack-protector -c "$ps5/libre/crt/start.c" -o "$work/link/obj/app_crt.o"
     symbol_policy="$ps5/libre/ld/title-symbols.map"
