@@ -1,7 +1,8 @@
 # Title art
 
-The home screen's art for PS5 RPCS3, made for this title by kongatime and
-shipped with the title:
+The home screen's art for Kong³, made for this title by kongatime and shipped
+with the title. The background was redone without the pattern of the
+PlayStation's button symbols (Sony's marks) the first one had:
 
 | File | Becomes |
 | --- | --- |
