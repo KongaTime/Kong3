@@ -36,6 +36,7 @@ SECTIONS
 
    .text ALIGN(16384) :
    {
+      __libre_image_start = .; /* the title's image, for dladdr (libc/misc.c) */
       *(.text.unlikely .text.unlikely.*)
       *(.text.startup .text.startup.*)
       *(.text.hot .text.hot.*)
@@ -95,7 +96,7 @@ SECTIONS
    .dynamic : { *(.dynamic) } :data :dynamic
    .data : { *(.data .data.*) } :data
    pb_defaults : { KEEP(*(pb_defaults)) } :data
-   .bss ALIGN(4096) : { *(.bss .bss.*) *(COMMON) } :data
+   .bss ALIGN(4096) : { *(.bss .bss.*) *(COMMON) __libre_image_end = .; } :data
 
    /DISCARD/ : { *(.note.GNU-stack) *(.gnu_debuglink) *(.interp) }
 }

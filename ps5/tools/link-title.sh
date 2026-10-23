@@ -64,13 +64,23 @@ radv_link_recipe "$vulkan" "$sdk" "$archive" || exit 2
 [[ $libre_start == 1 ]] && radv_linker_script=(-T "$ps5/libre/ld/ps5-title.ld")
 # The libc names the PS5 libre layer implements (ps5/libre/: MIT), bound to its
 # libre_<name> in place of the platform layer's ps5_<name> the recipe binds
+# (the recipe's flags, and the title's own, which come with its objects)
 libre_bound=(__cxa_thread_atexit_impl
-    opendir fdopendir readdir rewinddir dirfd closedir openat fstatat unlinkat mkdirat renameat fchmodat)
-for i in "${!radv_link_flags[@]}"; do
-    for name in "${libre_bound[@]}"; do
+    opendir fdopendir readdir rewinddir dirfd closedir openat fstatat unlinkat mkdirat renameat fchmodat
+    __memset_chk __xuname strcasestr qsort_r arc4random arc4random_buf arc4random_uniform clock_nanosleep
+    gmtime_r localtime_r times isatty pathconf getpagesizes strsignal getpwnam_r getpwuid_r umask fork
+    setsid wait4 fchown sbrk syscall posix_madvise openlog popen pclose memfd_create dladdr)
+for name in "${libre_bound[@]}"; do
+    for i in "${!radv_link_flags[@]}"; do
         [[ ${radv_link_flags[$i]} == "--defsym=$name=ps5_$name" ]] && radv_link_flags[$i]="--defsym=$name=libre_$name"
     done
+    for i in "${!objects[@]}"; do
+        [[ ${objects[$i]} == "--defsym=$name=ps5_$name" ]] && objects[$i]="--defsym=$name=libre_$name"
+    done
 done
+# dladdr's bounds of the title's image: the libre layout's (ps5/libre/ld/ps5-title.ld);
+# with PS5_Vulkan's, an empty range (dladdr then finds nothing)
+[[ $libre_start == 1 ]] || radv_link_flags+=(--defsym=__libre_image_start=_start --defsym=__libre_image_end=_start)
 # localeconv in the C locale, '.' the decimal point (the console's gives none, and
 # tinygltf's JSON parser then read 0.62 as 0): the platform layer's since SDK fork
 # fa69d00 (tools/setup-sdk.sh's pin is never older), bound by PS5_Vulkan's recipe
