@@ -113,7 +113,10 @@ def main():
                  ("ps5/libre/third_party/musl-regex/COPYRIGHT", "musl-regex-COPYRIGHT.txt")]
     for path, dest in libraries:
         write_text(out / "title" / dest, ROOT, rev, path)
-    glm = git(ROOT, "ls-tree", rev, "external/glm").split()[2]
+    # glm: a submodule in the template, files of the title's own tree here (then
+    # in the title's source archive already)
+    glm_kind, glm = git(ROOT, "ls-tree", rev, "external/glm").split()[1:3]
+    submodules = {"external/glm": dict(remote="https://github.com/g-truc/glm", revision=glm)} if glm_kind == "commit" else {}
     parts.append(dict(
         id="title", name=f"{name}: its program, the foundation (Sascha Willems' Vulkan examples and base class, the PS5 layer) "
                          "and the libraries in its tree (Dear ImGui, libktx, tinygltf with stb_image and nlohmann json, "
@@ -123,7 +126,7 @@ def main():
         copyright=["Copyright (c) 2016-2026 Sascha Willems", "Copyright (C) 2026 Mihawk", "and each library's authors"],
         artifacts=["eboot.bin", "shaders/"], texts="licenses/title/",
         source=dict(kind="git", path=str(ROOT), remote=remote, revision=rev, dirty=dirty,
-                    submodules={"external/glm": dict(remote="https://github.com/g-truc/glm", revision=glm)})))
+                    submodules=submodules)))
 
     # The UI kit, in a title that has the module
     if (PS5 / "ui/setup-kit.sh").exists():
@@ -219,6 +222,16 @@ def main():
     for (lib_id, lib_name, lib_licence, texts, folder, _, _), _ in thirdparty.found(link):
         repo = Path(folder) if folder and Path(folder).is_absolute() else rpcs3 / (folder or "")
         lrev, ldirty, lremote = revision(repo)
+        if folder is None:
+            # In RPCS3's own tree: its source is RPCS3's
+            for text in texts:
+                write_text(out / lib_id / Path(text).name, rpcs3, rrev, text)
+            parts.append(dict(
+                id=lib_id, name=f"{lib_name} (bundled by RPCS3, in its own tree)", licence=lib_licence,
+                copyright=["its authors (licenses/" + lib_id + "/)"],
+                artifacts=["eboot.bin"], texts=f"licenses/{lib_id}/",
+                source=dict(kind="within", part="rpcs3", revision=rrev, dirty=rdirty)))
+            continue
         extra = {}
         if lib_id == "llvm":
             # rpcs3/build-llvm.sh applies the title's patches to the checkout: those
@@ -295,7 +308,12 @@ def main():
     lines = [legal, "", "The parts of this title", "=======================", ""]
     for p in parts:
         src = p["source"]
-        where = f'{src["remote"]} at {src["revision"]}' if src["kind"] == "git" else f'{src["revision"]}: {src["url"]}'
+        if src["kind"] == "git":
+            where = f'{src["remote"]} at {src["revision"]}'
+        elif src["kind"] == "within":
+            where = f'in the source of the part "{src["part"]}" (at {src["revision"]})'
+        else:
+            where = f'{src["revision"]}: {src["url"]}'
         if src.get("patches"):
             where += ", with " + ", ".join(src["patches"])
         lines += [p["name"], f'  licence:   {p["licence"]}', f'  copyright: {"; ".join(p["copyright"])}',

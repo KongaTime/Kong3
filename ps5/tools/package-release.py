@@ -34,6 +34,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tarfile
 import tempfile
 import zipfile
 from pathlib import Path
@@ -91,6 +92,10 @@ def archive(repo, revision, prefix, dest):
     with open(dest, "wb") as out:
         subprocess.run(["git", "-C", str(repo), "archive", "--format=tar.gz", f"--prefix={prefix}/", revision],
                        stdout=out, check=True)
+    # Never an empty one: a part whose source is not where the notices say
+    with tarfile.open(dest) as tar:
+        if not any(m.isfile() for m in tar):
+            raise SystemExit(f"{dest.name}: no files in {repo} at {revision}")
 
 
 def main():
@@ -143,6 +148,8 @@ def main():
                 archive(sdk, src["built_with_sdk"], sname, out / "source" / f"{sname}.tar.gz")
                 sources.append((f"{sname}.tar.gz", "the payload SDK fork the RADV archive was built against",
                                 f'https://github.com/mihawk-99/PS5_PayloadSDK at {src["built_with_sdk"]}'))
+        elif src["kind"] == "within":
+            sources.append((f'(in the archive of "{src["part"]}")', p["name"], f'at {src["revision"]}'))
         elif src["kind"] == "tarball":
             # A release as its makers publish it (GNU libiconv), checked against the
             # digest the notices recorded at the link
