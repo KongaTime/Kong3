@@ -19,7 +19,7 @@ target_sources(samples PRIVATE ${ROOT}/ps5/libre/memory/vm.c ${ROOT}/ps5/libre/m
 # And its threads: stacks in direct memory, thread_local destructors at a thread's end
 target_sources(samples PRIVATE ${ROOT}/ps5/libre/threads/threads.c)
 # And directories and the *at calls (link-title.sh binds their names)
-target_sources(samples PRIVATE ${ROOT}/ps5/libre/files/dir.c)
+target_sources(samples PRIVATE ${ROOT}/ps5/libre/files/dir.c ${ROOT}/ps5/libre/files/files.c)
 # And the C library functions a title lacks (link-title.sh binds their names)
 target_sources(samples PRIVATE ${ROOT}/ps5/libre/libc/misc.c)
 set_source_files_properties(${ROOT}/ps5/libre/memory/wrap.c PROPERTIES COMPILE_OPTIONS "-fno-omit-frame-pointer")

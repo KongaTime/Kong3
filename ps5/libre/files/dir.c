@@ -32,6 +32,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "at.h"
+
 /* Directory descriptors the layer remembers paths for: those below this */
 #define REMEMBERED 4096
 /* getdents' buffer: the directory's block size in whole 16 KiB pages, 64 KiB at
@@ -86,8 +88,9 @@ static char *path_of(int fd)
 }
 
 /* The path an *at call means: *path itself (absolute, or relative to the working
- * directory), or a new one joined to the directory's, set in *joined to free */
-static int resolve(int dirfd, const char **path, char **joined)
+ * directory), or a new one joined to the directory's, set in *joined to free.
+ * Shared with the other *at calls (files/at.h) */
+int libre_resolve_at(int dirfd, const char **path, char **joined)
 {
    *joined = NULL;
    if (!*path)
@@ -224,7 +227,7 @@ int libre_openat(int dirfd, const char *path, int flags, ...)
       va_end(arguments);
    }
    char *joined;
-   if (resolve(dirfd, &path, &joined) != 0)
+   if (libre_resolve_at(dirfd, &path, &joined) != 0)
       return -1;
    const int fd = open(path, flags, mode);
    if (fd >= 0)
@@ -238,7 +241,7 @@ int libre_openat(int dirfd, const char *path, int flags, ...)
 int libre_fstatat(int dirfd, const char *path, struct stat *info, int flags)
 {
    char *joined;
-   if (resolve(dirfd, &path, &joined) != 0)
+   if (libre_resolve_at(dirfd, &path, &joined) != 0)
       return -1;
    const int result = (flags & AT_SYMLINK_NOFOLLOW) ? lstat(path, info) : stat(path, info);
    const int error = errno;
@@ -250,7 +253,7 @@ int libre_fstatat(int dirfd, const char *path, struct stat *info, int flags)
 int libre_unlinkat(int dirfd, const char *path, int flags)
 {
    char *joined;
-   if (resolve(dirfd, &path, &joined) != 0)
+   if (libre_resolve_at(dirfd, &path, &joined) != 0)
       return -1;
    const int result = (flags & AT_REMOVEDIR) ? rmdir(path) : unlink(path);
    const int error = errno;
@@ -262,7 +265,7 @@ int libre_unlinkat(int dirfd, const char *path, int flags)
 int libre_mkdirat(int dirfd, const char *path, mode_t mode)
 {
    char *joined;
-   if (resolve(dirfd, &path, &joined) != 0)
+   if (libre_resolve_at(dirfd, &path, &joined) != 0)
       return -1;
    const int result = mkdir(path, mode);
    const int error = errno;
@@ -274,9 +277,9 @@ int libre_mkdirat(int dirfd, const char *path, mode_t mode)
 int libre_renameat(int from_dirfd, const char *from, int to_dirfd, const char *to)
 {
    char *from_joined, *to_joined;
-   if (resolve(from_dirfd, &from, &from_joined) != 0)
+   if (libre_resolve_at(from_dirfd, &from, &from_joined) != 0)
       return -1;
-   if (resolve(to_dirfd, &to, &to_joined) != 0)
+   if (libre_resolve_at(to_dirfd, &to, &to_joined) != 0)
    {
       free(from_joined);
       return -1;
@@ -298,7 +301,7 @@ int libre_fchmodat(int dirfd, const char *path, mode_t mode, int flags)
       return -1;
    }
    char *joined;
-   if (resolve(dirfd, &path, &joined) != 0)
+   if (libre_resolve_at(dirfd, &path, &joined) != 0)
       return -1;
    const int result = chmod(path, mode);
    const int error = errno;

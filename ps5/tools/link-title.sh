@@ -69,7 +69,9 @@ libre_bound=(__cxa_thread_atexit_impl
     opendir fdopendir readdir rewinddir dirfd closedir openat fstatat unlinkat mkdirat renameat fchmodat
     __memset_chk __xuname strcasestr qsort_r arc4random arc4random_buf arc4random_uniform clock_nanosleep
     gmtime_r localtime_r times isatty pathconf getpagesizes strsignal getpwnam_r getpwuid_r umask fork
-    setsid wait4 fchown sbrk syscall posix_madvise openlog popen pclose memfd_create dladdr)
+    setsid wait4 fchown sbrk syscall posix_madvise openlog popen pclose memfd_create dladdr
+    access statfs fstatfs statvfs fstatvfs futimens utimensat link symlink readlink realpath mkstemp mkstemps
+    posix_fallocate __assert)
 for name in "${libre_bound[@]}"; do
     for i in "${!radv_link_flags[@]}"; do
         [[ ${radv_link_flags[$i]} == "--defsym=$name=ps5_$name" ]] && radv_link_flags[$i]="--defsym=$name=libre_$name"

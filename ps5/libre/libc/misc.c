@@ -432,6 +432,14 @@ char *libre_strcasestr(const char *haystack, const char *needle)
    return NULL;
 }
 
+/* assert's failure (FreeBSD's __assert): the expression and where, then the end */
+void libre___assert(const char *function, const char *file, int line, const char *expression)
+{
+   fprintf(stderr, "Assertion failed: (%s), function %s, file %s, line %d.\n", expression, function ? function : "?",
+      file, line);
+   abort();
+}
+
 void *libre___memset_chk(void *destination, int value, size_t size, size_t room)
 {
    if (size > room)
