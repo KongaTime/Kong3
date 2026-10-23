@@ -11,12 +11,13 @@ and CMake), and its frontend for the console, a launcher and a pause menu, is in
 > games, PS3 firmware, BIOS files or decryption keys. Install the PS3 system software
 > from Sony's own `PS3UPDAT.PUP`, and play backups of games you own, made yourself.
 
-> [!WARNING]
-> **Source only. There is no download of the built title, and there will not be one.**
-> RPCS3 is GPL-2.0-only, and the PS5 platform layer every title links is
-> GPL-3.0-or-later: the two cannot be combined into one program that is shared. Build
-> it yourself, for your own console, from the source below, and **do not share the
-> builds** (`eboot.bin`, `rpcs3-code.bin` or the title folder).
+> [!NOTE]
+> **The built title, Kong³, is a download from v1.0.0-beta1 on.** Nothing in it is
+> GPL-3.0-or-later; as a whole it is GPL-2.0-only, RPCS3's licence, and each release
+> attaches its complete source. A build of your own with
+> `PS5_GPL3_FRAME_GENERATION=1` (Lossless Scaling's and MihawkGen's frame generation)
+> or `PS5_RPCN=1` (online play; its TLS is wolfSSL) has GPL-3.0 code in it: keep
+> those to yourself.
 
 ## What works
 
@@ -28,9 +29,10 @@ Measured on my console, with build 150 (PS5_RPCS3 `d2b0ef4`):
   open-world game played 7.5 minutes at about 25 fps, its graphics thread flat at
   about 600 MiB. Both are CPU-bound: the emulated SPUs run at 85 to 100% of their
   cores.
-- **Frame generation** shows frames made between the game's own, three ways: the
-  title's own, Lossless Scaling's (from your own `Lossless.dll`, below) and MihawkGen,
-  a small trained network built in. With one frame made between, the 27 fps game
+- **Frame generation** shows frames made between the game's own: the title's own. In
+  a build of your own with `PS5_GPL3_FRAME_GENERATION=1` (GPL-3.0, so not for
+  sharing) also Lossless Scaling's (from your own `Lossless.dll`, below) and
+  MihawkGen, a small trained network. With one frame made between, the 27 fps game
   showed about 45 frames a second; fast camera turns can smear or double edges.
 - **A launcher**: the games in `rpcs3/games/` (folders and ISOs) with search, sort and
   favourites; trophies; save data; game patches (`patch.yml`); PS3 packages and
@@ -116,9 +118,9 @@ compiles with (the newest `llvm-config` it finds), or the link stops on a missin
 3. Put your games, each a folder or an ISO you made from your own disc, in
    `/data/homebrew/PPSA99200/rpcs3/games/`; PS3 packages and their licences in
    `rpcs3/packages/`, installed from the launcher's Install tab.
-4. For Lossless Scaling's frame generation: your own copy of its `Lossless.dll` (from
-   Steam) in `/data/homebrew/PPSA99200/rpcs3/`. It is read there, never copied or
-   shipped.
+4. For Lossless Scaling's frame generation, in a build of your own with
+   `PS5_GPL3_FRAME_GENERATION=1`: your own copy of its `Lossless.dll` (from Steam) in
+   `/data/homebrew/PPSA99200/rpcs3/`. It is read there, never copied or shipped.
 
 Updating: replace `eboot.bin` and `rpcs3-code.bin`; your settings, saves, games and
 caches stay.

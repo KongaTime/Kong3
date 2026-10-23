@@ -17,9 +17,10 @@ link staged licenses/components.json) and writes:
   SHA256SUMS            the ZIP's and the archives' digests
 
 It refuses a title whose parts were built from uncommitted source (the notices
-record "dirty"), and a folder holding anything a release must never carry (a test
-file, a screenshot, klog, .env). The release itself (tag, GitHub release, read-back)
-follows skills/ps5-release.
+record "dirty"), with --shareable one with anything GPL-3.0-or-later in it (the
+notices list each part ps5/tools/shareable.py finds), and a folder holding anything
+a release must never carry (a test file, a screenshot, klog, .env). The release
+itself (tag, GitHub release, read-back) follows skills/ps5-release.
 
 Copyright (C) 2026 Mihawk
 SPDX-License-Identifier: MIT
@@ -33,6 +34,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tarfile
 import tempfile
 import zipfile
 from pathlib import Path
@@ -90,12 +92,18 @@ def archive(repo, revision, prefix, dest):
     with open(dest, "wb") as out:
         subprocess.run(["git", "-C", str(repo), "archive", "--format=tar.gz", f"--prefix={prefix}/", revision],
                        stdout=out, check=True)
+    # Never an empty one: a part whose source is not where the notices say
+    with tarfile.open(dest) as tar:
+        if not any(m.isfile() for m in tar):
+            raise SystemExit(f"{dest.name}: no files in {repo} at {revision}")
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("tag")
     parser.add_argument("--date", default=datetime.date.today().isoformat())
+    parser.add_argument("--shareable", action="store_true",
+                        help="refuse a title with anything GPL-3.0-or-later in it (ps5/tools/shareable.py)")
     args = parser.parse_args()
     when = datetime.date.fromisoformat(args.date)
 
@@ -106,6 +114,10 @@ def main():
     dirty = [p["id"] for p in parts if p["source"].get("dirty")]
     if dirty:
         raise SystemExit(f"built from uncommitted source: {', '.join(dirty)}; commit, rebuild, then package")
+    gpl3 = [p["id"] for p in parts if "GPL-3.0" in p["licence"]]
+    if args.shareable and gpl3:
+        subprocess.run([sys.executable, str(PS5 / "tools/shareable.py"), str(ROOT / "build/ps5")])
+        raise SystemExit(f"not shareable: GPL-3.0-or-later parts {', '.join(gpl3)} (docs/distributable-build.md)")
     found = [str(p.relative_to(folder)) for p in folder.rglob("*") if p.name in NEVER]
     if found:
         raise SystemExit(f"the title folder holds what a release never carries: {found}")
@@ -136,6 +148,16 @@ def main():
                 archive(sdk, src["built_with_sdk"], sname, out / "source" / f"{sname}.tar.gz")
                 sources.append((f"{sname}.tar.gz", "the payload SDK fork the RADV archive was built against",
                                 f'https://github.com/mihawk-99/PS5_PayloadSDK at {src["built_with_sdk"]}'))
+        elif src["kind"] == "within":
+            sources.append((f'(in the archive of "{src["part"]}")', p["name"], f'at {src["revision"]}'))
+        elif src["kind"] == "tarball":
+            # A release as its makers publish it (GNU libiconv), checked against the
+            # digest the notices recorded at the link
+            tarball = Path(src["path"])
+            if sha256(tarball) != src["sha256"]:
+                raise SystemExit(f"{tarball} is not the tarball the title was built from")
+            shutil.copy2(tarball, out / "source" / tarball.name)
+            sources.append((tarball.name, p["name"], src["url"]))
         else:
             sources.append(("(not attached)", p["name"], f'{src["revision"]}: {src["url"]}'))
     with open(out / "source/SOURCES.txt", "w") as f:

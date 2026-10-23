@@ -22,14 +22,24 @@
 
 #include "platform.h"
 
+#include <regex.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
+#include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
+#include <locale>
+#include <sstream>
 #include <cstdlib>
 #include <mutex>
 #include <string>
+
+/* After libc++'s <locale>: the SDK's xlocale headers, first, hide its narrow _l classifiers */
+#include <execinfo.h>
+#include <langinfo.h>
+#include <xlocale.h>
 
 /* The fork's interface (rpcs3/ps5/ps5_frontend.h), as it declares it */
 struct rpcs3_ps5_pad {
@@ -56,7 +66,7 @@ namespace {
 
 /* This build's number, which the launcher shows and the trace and RPCS3.log
  * start with: one more for each build that goes to the console */
-const char *const titleBuild = "162";
+const char *const titleBuild = "173";
 
 /* The console's buttons as the PS3's: OPTIONS is START, the touch pad's click
  * SELECT; the PS button stays the shell's */
@@ -115,6 +125,103 @@ void trace(const char *line)
 	say("RPCS3: %s", line);
 }
 
+/* The PS5 libre layer's regular expressions and memory streams (builds 166 to 168), the C locale and backtraces (169, 170),
+ * tried once at the start: what each gave, to the trace */
+void checkLibre()
+{
+	char line[256];
+	regex_t re;
+	int result = regcomp(&re, "^([a-z]+)-([0-9]+)$", REG_EXTENDED);
+	regmatch_t found[3]{};
+	if (result == 0) {
+		result = regexec(&re, "build-168", 3, found, 0);
+		regmatch_t range[1] = { { 6, 11 } };
+		const int ranged = regexec(&re, "xxxxxxabc-1yyy", 1, range, REG_STARTEND);
+		snprintf(line, sizeof line,
+			"libre: regex %d, groups %lld-%lld %lld-%lld, REG_STARTEND %d at %lld-%lld (expected 0, 0-5 6-9, 0 at 6-11)",
+			result, (long long)found[1].rm_so, (long long)found[1].rm_eo, (long long)found[2].rm_so,
+			(long long)found[2].rm_eo, ranged, (long long)range[0].rm_so, (long long)range[0].rm_eo);
+		regfree(&re);
+	} else {
+		snprintf(line, sizeof line, "libre: regcomp failed: %d", result);
+	}
+	trace(line);
+
+	char *buffer = nullptr;
+	size_t size = 0;
+	if (FILE *stream = open_memstream(&buffer, &size)) {
+		fprintf(stream, "hello %d", 168);
+		fflush(stream);
+		const size_t flushed = size;
+		fprintf(stream, " and more");
+		const int closed = fclose(stream);
+		snprintf(line, sizeof line, "libre: open_memstream %zu at fflush, %zu '%s' at fclose (%d) (expected 9, 18 'hello 168 and more', 0)",
+			flushed, size, buffer ? buffer : "(null)", closed);
+		free(buffer);
+	} else {
+		snprintf(line, sizeof line, "libre: open_memstream failed: errno %d", errno);
+	}
+	trace(line);
+
+	/* stderr on the klog pipe (libre/klog.h), and descriptor 2 too if the console let it be */
+	struct stat status{};
+	const bool fd2Pipe = fstat(STDERR_FILENO, &status) == 0 && S_ISFIFO(status.st_mode);
+	const int stderrFd = fileno(stderr);
+	const bool streamPipe = fstat(stderrFd, &status) == 0 && S_ISFIFO(status.st_mode);
+	snprintf(line, sizeof line, "libre: stderr on the klog pipe: %s (descriptor %d); descriptor 2 too: %s",
+		streamPipe ? "yes" : "no", stderrFd, fd2Pipe ? "yes" : "no");
+	trace(line);
+
+	/* The C locale (build 169): C's _l calls, and libc++, which is built on them */
+	locale_t c = newlocale(LC_ALL_MASK, "C", nullptr);
+	locale_t other = newlocale(LC_ALL_MASK, "de_DE.UTF-8", nullptr);
+	char *end = nullptr;
+	const double parsed = strtod_l("0.62x", &end, c);
+	char printed[32];
+	snprintf_l(printed, sizeof printed, c, "%.3f", 1.25);
+	snprintf(line, sizeof line,
+		"libre: locale C %s, de_DE %s; strtod_l %.2f stops at '%s', snprintf_l %s, localeconv '%s', MB_CUR_MAX %zu, "
+		"___mb_cur_max_l %d, CODESET %s, %s %s (expected yes, no; 0.62 'x', 1.250, '.', 1, 4, UTF-8, Jan Saturday)",
+		c ? "yes" : "no", other ? "yes" : "no", parsed, end ? end : "?", printed, localeconv()->decimal_point,
+		(size_t)MB_CUR_MAX, ___mb_cur_max_l(c), nl_langinfo(CODESET), nl_langinfo(ABMON_1), nl_langinfo(DAY_7));
+	trace(line);
+
+	std::ostringstream stream;
+	stream << 0.62 << ' ' << 1234567;
+	const std::ctype<wchar_t> &wide = std::use_facet<std::ctype<wchar_t>>(std::locale::classic());
+	snprintf(line, sizeof line,
+		"libre: libc++ stod %.2f, stream '%s', isalpha a %d 1 %d, toupper q %c, wide alpha 0xe9 %d (iswalpha %d), "
+		"upper 0xe9 0x%x (towupper 0x%x) (expected 0.62, '0.62 1234567', 1 0, Q, the same twice)",
+		std::stod("0.62"), stream.str().c_str(), std::isalpha('a', std::locale::classic()) ? 1 : 0,
+		std::isalpha('1', std::locale::classic()) ? 1 : 0, std::toupper('q', std::locale::classic()),
+		wide.is(std::ctype_base::alpha, wchar_t(0xe9)) ? 1 : 0, iswalpha(0xe9) ? 1 : 0,
+		(unsigned)wide.toupper(wchar_t(0xe9)), (unsigned)towupper(0xe9));
+	trace(line);
+
+	const char *utf8 = "h\xc3\xa9llo";
+	const char *from = utf8;
+	mbstate_t state{};
+	wchar_t wideText[16]{};
+	const size_t wideCount = mbsnrtowcs_l(wideText, &from, 3, 16, &state, c);
+	const wchar_t *wideFrom = wideText;
+	char back[16]{};
+	state = {};
+	const size_t backCount = wcsnrtombs_l(back, &wideFrom, 2, sizeof back, &state, c);
+	snprintf(line, sizeof line,
+		"libre: mbsnrtowcs_l of 3 bytes %zd (0x%x 0x%x), wcsnrtombs_l of 2 %zd '%s' (expected 2 (0x68 0xe9), 3 'h\xc3\xa9' "
+		"in UTF-8; in a single-byte locale 3 (0x68 0xc3 0xa9), 2 'h\xc3')",
+		(ssize_t)wideCount, (unsigned)wideText[0], (unsigned)wideText[1], (ssize_t)backCount, back);
+	trace(line);
+
+	void *frames[16];
+	const size_t depth = backtrace(frames, 16);
+	snprintf(line, sizeof line, "libre: backtrace %zu frames, to klog:", depth);
+	trace(line);
+	backtrace_symbols_fd(frames, depth, STDERR_FILENO);
+	if (c)
+		freelocale(c);
+}
+
 } // namespace
 
 // RADV's shader cache (Mesa's multipart database, /app0/radv-shader-cache)
@@ -144,6 +251,7 @@ extern "C" int ps5_title_main(void)
 		chmod(tracePath, 0666);
 	}
 	trace((std::string("title: start, build ") + titleBuild).c_str());
+	checkLibre();
 	std::string boot;
 	if (std::ifstream file{"/app0/rpcs3-boot.txt"}) {
 		std::getline(file, boot);

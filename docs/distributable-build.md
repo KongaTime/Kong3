@@ -19,6 +19,7 @@ archives and objects its link takes):
 | PS5_Vulkan's linker script (`ps5-pie-unwind.ld`) | the title's layout | GPL-3.0-or-later | rewrite |
 | Lossless Scaling's frame generation port (Eden) | `Emu/RSX/VK/lsfg/` | GPL-3.0-or-later | leave out of the shareable build |
 | MihawkGen | `Emu/RSX/VK/mihawkgen/` | GPL-3.0-or-later | leave out of the shareable build |
+| wolfSSL (RPCS3's 3rdparty, 5.9.4), RPCN's TLS and libcurl's | 36 objects | GPL-3.0-or-later (GPL-2.0 only for the projects its LICENSING names) | leave RPCN out of the shareable build (found in phase 5, build 172) |
 | PS5_RPCS3's `rpcs3/ps5/ps5_alloc_track.cpp` | the memory tracker | the fork's, but written after the platform's `heap_wrap.c` | rewrite from scratch |
 | SDK headers PS5_RPCS3 includes (`ps5platform/kernel.h`, `heap.h`, `libc.h`, `shm.h`) | declarations, inline code | GPL-3.0-or-later | the new layer's own headers |
 
@@ -53,21 +54,39 @@ About 170 functions to write.
 
 ## Phases
 
-1. **Start-up:** the entry point, the linker script and the `libc.prx` generator. Proof:
+1. **Start-up** (done, build 156): the entry point, the linker script and the `libc.prx` generator. Proof:
    the title starts, runs and ends through the shell as now.
-2. **Memory:** the heap in direct memory (on dlmalloc's mspaces), the allocation
+2. **Memory** (done, build 160): the heap in direct memory (on dlmalloc's mspaces), the allocation
    wraps, aligned allocation, shared memory, placement of thread stacks; and a new
    memory tracker in PS5_RPCS3. Proof: an open-world game played 20 minutes with
    the heap flat, as build 150.
-3. **Threads and the C library's gaps:** the thread wraps, thread-exit destructors,
+3. **Threads and the C library's gaps** (done, build 170: the title links nothing of the platform layer): the thread wraps, thread-exit destructors,
    the directory and POSIX functions, `open_memstream`, `localeconv` and the `_l`
    locale functions, klog, the floating-point mode. Proof: both test games, saves,
    the launcher's every page.
-4. **The shareable build:** a build switch that leaves out the Lossless Scaling port
+4. **The shareable build** (done, build 171: PS5_RPCS3's PS5_GPL3_FRAME_GENERATION, off by default in rpcs3/build-rpcs3.sh; ps5/tools/shareable.py, and package-release.py --shareable): a build switch that leaves out the Lossless Scaling port
    and MihawkGen (the title's own frame generation stays); PS5_RPCS3 including no
    GPL header; a release check that fails on any GPL-3.0 object, symbol or file.
 5. **Packaging and notices:** confirm the native tool adds no code to the title (or
    write a packager), complete notices for every part, then a beta built this way.
+   The native tool adds no code (measured on build 171): its link step leaves the
+   code and read-only data byte for byte and adds the console's tables, built from
+   the title's own symbols (472 NIDs, 8 library names, the process parameters,
+   build ID notes); its SELF wrapping copies the ELF verbatim behind a header,
+   zero padding and a digest of the input. RADV's archive is PS5_Mesa's own build
+   (its PS5 window system MIT). ps5/tools/shareable.py checks the packaging at each
+   link: every executable segment out is one in, byte for byte, and the signed
+   files carry it verbatim.
+   The notices list every part in the title (build 172): RPCS3, the 22 libraries
+   it bundles that the link takes or whose headers it includes
+   (ps5/tools/thirdparty.py), FFmpeg (configured LGPL) and GNU libiconv, each with
+   its licence texts and its source at the revision built; a release attaches
+   that source (libiconv's release tarball, checked). Taking that inventory found
+   wolfSSL, GPL-3.0-or-later: the shareable build leaves RPCN out (PS5_RPCS3's
+   PS5_RPCN), and shareable.py knows it. Abseil (for Protocol Buffers) and some of
+   glslang's files are Apache-2.0, which the FSF reads as incompatible with
+   GPL-2.0; upstream RPCS3 links them the same way. That reading, and this plan's,
+   wants a lawyer's eye before a release.
 
 When a part's status is uncertain, it does not ship until it is settled. This plan is
 an engineer's reading of the licences, not legal advice.

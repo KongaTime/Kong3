@@ -25,6 +25,13 @@
 #   - Vulkan from the foundation's headers (external/vulkan) and a placeholder
 #     library: the title links RADV itself, with PS5_Vulkan's recipe, and
 #     RPCS3 reaches it through the foundation's volk (ps5/third_party/volk);
+#   - without Lossless Scaling's and MihawkGen's frame generation, GPL-3.0-or-later
+#     both, so the title can be shared (docs/distributable-build.md); the
+#     built-in frame generation stays. PS5_GPL3_FRAME_GENERATION=1 builds them in
+#     (a title that is then source only);
+#   - without RPCN, whose TLS is wolfSSL, GPL-3.0-or-later (PS5_RPCS3's
+#     rpcs3/ps5/no-wolfssl stands in, and RPCN stays offline). PS5_RPCN=1 builds
+#     it in (a title that is then source only);
 #
 # RPCS3 needs clang 19 or later; the SDK takes the newest llvm-config it finds
 # (or LLVM_CONFIG).
@@ -73,6 +80,11 @@ done
 "$root/rpcs3/build-libiconv.sh"
 "$root/rpcs3/build-llvm.sh"
 
+gpl3_frame_generation=OFF
+[[ ${PS5_GPL3_FRAME_GENERATION:-0} == 1 ]] && gpl3_frame_generation=ON
+rpcn=OFF
+[[ ${PS5_RPCN:-0} == 1 ]] && rpcn=ON
+
 mkdir -p "$build"
 if $configure || [[ ! -f $build/build.ninja ]]; then
     rm -f "$build/CMakeCache.txt"
@@ -102,10 +114,21 @@ if $configure || [[ ! -f $build/build.ninja ]]; then
         -DPS5_LIBRE_DIR="$root/ps5/libre" \
         -DUSE_VULKAN=ON -DVulkan_INCLUDE_DIR="$root/external" \
         -DVulkan_LIBRARY="$build/libvulkan-placeholder.a" \
+        -DPS5_GPL3_FRAME_GENERATION=$gpl3_frame_generation -DPS5_RPCN=$rpcn \
         >"$build/configure.log" 2>&1 || {
         grep -n "CMake Error" -A6 "$build/configure.log" >&2
         echo "error: configure failed: $build/configure.log" >&2; exit 1; }
+elif ! grep -qx "PS5_GPL3_FRAME_GENERATION:BOOL=$gpl3_frame_generation" "$build/CMakeCache.txt" ||
+        ! grep -qx "PS5_RPCN:BOOL=$rpcn" "$build/CMakeCache.txt"; then
+    echo "==> [rpcs3] Lossless Scaling's and MihawkGen's frame generation: $gpl3_frame_generation; RPCN: $rpcn"
+    cmake -S "$src" -B "$build" -DPS5_GPL3_FRAME_GENERATION=$gpl3_frame_generation -DPS5_RPCN=$rpcn \
+        >"$build/configure.log" 2>&1 || {
+        echo "error: configure failed: $build/configure.log" >&2; exit 1; }
 fi
+
+# The title links every archive the build leaves (rpcs3/rpcs3.cmake): not a
+# wolfSSL built before RPCN was turned off
+[[ $rpcn == ON ]] || rm -f "$build/3rdparty/wolfssl/wolfssl/libwolfssl.a"
 
 echo "==> [rpcs3] building ${targets[*]}"
 ninja -C "$build" -k 0 "${targets[@]}" >"$build/build.log" 2>&1 || {

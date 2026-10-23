@@ -14,4 +14,8 @@ root=$(dirname "$ps5")
 vulkan=$(cd -- "${PS5_VULKAN_DIR:-$root/../PS5_Vulkan}" && pwd)
 title_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["titleId"])' "$ps5/sce_sys/param.json")
 [[ -d $root/dist/$title_id ]] || { echo "no dist/$title_id: run ps5/tools/build.sh first" >&2; exit 2; }
-exec python3 "$vulkan/tools/deploy-title-folder.py" --always eboot.bin "$root/dist/$title_id" "$@"
+# The home screen's art too: its textures are always the same size, and the
+# tool skips a file whose size matches (the new background was not sent)
+exec python3 "$vulkan/tools/deploy-title-folder.py" --always eboot.bin \
+    --always sce_sys/pic0.dds --always sce_sys/pic1.dds --always sce_sys/icon0.png --always sce_sys/param.json \
+    "$root/dist/$title_id" "$@"

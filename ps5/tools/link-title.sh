@@ -42,10 +42,12 @@ cc() { PS5_PAYLOAD_SDK="$sdk" sh "$vulkan/tooling/prospero-clang18" "$@"; }
 # console with build 156; PS5_LIBRE_START=0 takes PS5_Vulkan's instead
 libre_start=${PS5_LIBRE_START:-1}
 if [[ $libre_start == 1 ]]; then
-    cc -std=c11 -O2 -fno-stack-protector -c "$ps5/libre/crt/start.c" -o "$work/link/obj/app_crt.o"
+    crt_source="$ps5/libre/crt/start.c"
+    cc -std=c11 -O2 -fno-stack-protector -c "$crt_source" -o "$work/link/obj/app_crt.o"
     symbol_policy="$ps5/libre/ld/title-symbols.map"
 else
-    cc -std=c++20 -O2 -fno-exceptions -fno-rtti -c "$native/app_crt.cpp" -o "$work/link/obj/app_crt.o"
+    crt_source="$native/app_crt.cpp"
+    cc -std=c++20 -O2 -fno-exceptions -fno-rtti -c "$crt_source" -o "$work/link/obj/app_crt.o"
     symbol_policy="$native/app-symbols.map"
 fi
 # RADV calls AGC, which the SDK has no stubs for: these name its imports.
@@ -62,31 +64,57 @@ stub libSceAgcDriver vendor/ps5/sdk/stubs/agc_driver_canary_link_stub.c
 source "$vulkan/tools/radv-link.sh"
 radv_link_recipe "$vulkan" "$sdk" "$archive" || exit 2
 [[ $libre_start == 1 ]] && radv_linker_script=(-T "$ps5/libre/ld/ps5-title.ld")
+# What the link takes beside the objects, for ps5/tools/shareable.py: each part
+# PS5_Vulkan's (GPL-3.0-or-later) or the libre layer's
+{
+    printf 'crt %s\nsymbol-policy %s\n' "$crt_source" "$symbol_policy"
+    for i in "${!radv_linker_script[@]}"; do
+        [[ ${radv_linker_script[$i]} == -T ]] && printf 'linker-script %s\n' "${radv_linker_script[$((i + 1))]}"
+    done
+    if [[ $libre_start == 1 ]]; then
+        printf 'libc.prx %s\n' "$ps5/libre/tools/make-libc-prx.py"
+    else
+        printf 'libc.prx %s\n' "$vulkan/runtime/libc.prx"
+    fi
+} > "$work/link/parts.txt"
 # The libc names the PS5 libre layer implements (ps5/libre/: MIT), bound to its
 # libre_<name> in place of the platform layer's ps5_<name> the recipe binds
+# (the recipe's flags, and the title's own, which come with its objects)
 libre_bound=(__cxa_thread_atexit_impl
-    opendir fdopendir readdir rewinddir dirfd closedir openat fstatat unlinkat mkdirat renameat fchmodat)
-for i in "${!radv_link_flags[@]}"; do
-    for name in "${libre_bound[@]}"; do
+    opendir fdopendir readdir rewinddir dirfd closedir openat fstatat unlinkat mkdirat renameat fchmodat
+    __memset_chk __xuname strcasestr qsort_r arc4random arc4random_buf arc4random_uniform clock_nanosleep
+    gmtime_r localtime_r times isatty pathconf getpagesizes strsignal getpwnam_r getpwuid_r umask fork
+    setsid wait4 fchown sbrk syscall posix_madvise openlog popen pclose memfd_create dladdr
+    access statfs fstatfs statvfs fstatvfs futimens utimensat link symlink readlink realpath mkstemp mkstemps
+    posix_fallocate __assert
+    accept4 getaddrinfo freeaddrinfo gai_strerror getnameinfo if_nametoindex if_indextoname if_nameindex
+    if_freenameindex in6addr_any
+    regcomp regexec regfree regerror open_memstream
+    newlocale freelocale localeconv localeconv_l nl_langinfo nl_langinfo_l strtod_l strtof_l strtold_l strtoll_l
+    strtoull_l snprintf_l sscanf_l asprintf_l strcoll_l strxfrm_l strftime_l wcscoll_l wcsxfrm_l btowc_l wctob_l
+    iswctype_l mbrlen_l mbrtowc_l mbsrtowcs_l mbsnrtowcs_l wcrtomb_l wcsnrtombs_l mbtowc_l ___mb_cur_max_l
+    ___runetype_l ___tolower_l ___toupper_l __runes_for_locale catopen catgets catclose backtrace backtrace_symbols_fd)
+for name in "${libre_bound[@]}"; do
+    for i in "${!radv_link_flags[@]}"; do
         [[ ${radv_link_flags[$i]} == "--defsym=$name=ps5_$name" ]] && radv_link_flags[$i]="--defsym=$name=libre_$name"
     done
+    for i in "${!objects[@]}"; do
+        [[ ${objects[$i]} == "--defsym=$name=ps5_$name" ]] && objects[$i]="--defsym=$name=libre_$name"
+    done
 done
+# dladdr's bounds of the title's image: the libre layout's (ps5/libre/ld/ps5-title.ld);
+# with PS5_Vulkan's, an empty range (dladdr then finds nothing)
+[[ $libre_start == 1 ]] || radv_link_flags+=(--defsym=__libre_image_start=_start --defsym=__libre_image_end=_start)
 # localeconv in the C locale, '.' the decimal point (the console's gives none, and
-# tinygltf's JSON parser then read 0.62 as 0): the platform layer's since SDK fork
-# fa69d00 (tools/setup-sdk.sh's pin is never older), bound by PS5_Vulkan's recipe
-# since its 6a6dfa6. With an older recipe the title binds it here, kept local as
-# the recipe keeps its bound names. The symbol listing is read whole before it
-# is searched: piped into grep -q under pipefail, llvm-nm's SIGPIPE made the
-# found symbol a miss about half the time once the archive grew (SDK adc8dd7).
-platform_has_localeconv=false
-grep -q " T ps5_localeconv$" <<<"$("$sdk/bin/llvm-nm" --defined-only "$sdk/target/lib/libps5platform.a" 2>/dev/null)" &&
-    platform_has_localeconv=true
-if $platform_has_localeconv && [[ " ${radv_link_flags[*]} " != *" --defsym=localeconv=ps5_localeconv "* ]]; then
+# tinygltf's JSON parser then read 0.62 as 0): the libre layer's (libc/locale.c).
+# A recipe that binds it binds it to the platform layer's, rebound above; one that
+# does not, the title binds here, kept local as the recipe keeps its bound names
+if [[ " ${radv_link_flags[*]} " != *" --defsym=localeconv=libre_localeconv "* ]]; then
     printf '{\n    local:\n        localeconv;\n};\n' > "$work/link/localeconv-local.map"
-    radv_link_flags+=(--defsym=localeconv=ps5_localeconv --version-script "$work/link/localeconv-local.map")
+    radv_link_flags+=(--defsym=localeconv=libre_localeconv --version-script "$work/link/localeconv-local.map")
 fi
 "$sdk/bin/prospero-lld" "${radv_linker_script[@]}" --eh-frame-hdr "${radv_link_flags[@]}" \
-    --version-script "$symbol_policy" --exclude-libs=ALL \
+    --version-script "$symbol_policy" --exclude-libs=ALL --why-extract="$work/link/why-extract.txt" \
     -e _start -o "$work/link/llvm-pie.elf" \
     "$work/link/obj/app_crt.o" "${objects[@]}" \
     "$work/link/stubs/libSceAgc.so" "$work/link/stubs/libSceAgcDriver.so" \
@@ -94,9 +122,8 @@ fi
     --as-needed "$sdk"/target/lib/*.so
 # A title whose localeconv is still the console's reads every glTF fraction as 0
 # (black materials, models scaled to nothing): refuse it here, not on the console
-if $platform_has_localeconv &&
-        grep -q " U localeconv$" <<<"$("$sdk/bin/llvm-nm" "$work/link/llvm-pie.elf" 2>/dev/null)"; then
-    echo "link-title.sh: localeconv is not bound to the platform layer's ps5_localeconv" >&2
+if grep -q " U localeconv$" <<<"$("$sdk/bin/llvm-nm" "$work/link/llvm-pie.elf" 2>/dev/null)"; then
+    echo "link-title.sh: localeconv is not bound to the libre layer's libre_localeconv" >&2
     exit 1
 fi
 # A title loads neither libkernel_sys's exports nor libScePosixForWebKit's: an
@@ -156,4 +183,6 @@ archive_revision=$(sed -n 's/^revision: //p' "$(dirname "$(dirname "$archive")")
 printf '==> %s: %s (eboot.bin %s bytes; %d samples; RADV %s)\n' "$title_id" "$app" \
     "$(stat -c %s "$app/eboot.bin")" "${#samples[@]}" "${archive_revision:0:11}"
 # The notices beside eboot.bin: LEGAL.txt and licenses/, each part with its revision
-python3 "$ps5/tools/stage-notices.py" "$app" "$vulkan" "$archive"
+python3 "$ps5/tools/stage-notices.py" "$app" "$vulkan" "$archive" "$work"
+# Whether it can be shared: what in it is GPL-3.0-or-later (docs/distributable-build.md)
+python3 "$ps5/tools/shareable.py" "$work" | head -1 || true

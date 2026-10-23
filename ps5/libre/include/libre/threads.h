@@ -19,9 +19,19 @@
 #ifndef LIBRE_THREADS_H
 #define LIBRE_THREADS_H
 
+#include <pthread.h>
+#include <stddef.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* A thread's CPUs, as a set of any size (bit n of the set's bytes, from the
+ * first, for CPU n): the console's own pthread_*affinity_np refuse FreeBSD's
+ * 32-byte cpuset_t (ERANGE), and its scePthread*affinity take a 64-bit mask.
+ * 0, or an error number */
+int libre_pthread_getaffinity_np(pthread_t thread, size_t size, void *set);
+int libre_pthread_setaffinity_np(pthread_t thread, size_t size, const void *set);
 
 /* pthread_exit, after the thread's thread_local destructors */
 __attribute__((noreturn)) void libre_pthread_exit(void *value);
