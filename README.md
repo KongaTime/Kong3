@@ -11,7 +11,7 @@ a controller.
 > from Sony's own `PS3UPDAT.PUP`, and play backups of games you own, made yourself.
 
 > [!NOTE]
-> **The built title is a download from v1.0.0-beta1 on** ([releases](https://github.com/KongaTime/PS5_RPCS3Title/releases)).
+> **The built title is a download from v1.0.0-beta1 on** ([releases](https://github.com/KongaTime/Kong3/releases)).
 > Nothing in it is GPL-3.0-or-later any more ([`docs/distributable-build.md`](docs/distributable-build.md)):
 > as a whole it is GPL-2.0-only, RPCS3's licence, and each release attaches its complete
 > source. You may share it on those terms. A build of your own made with
