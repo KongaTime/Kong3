@@ -22,6 +22,7 @@
 #include <pthread.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 extern int sceKernelAllocateDirectMemory(int64_t search_start, int64_t search_end, size_t size, size_t alignment,
@@ -393,4 +394,48 @@ void libre_run_thread_destructors(void)
       entry->run(entry->object);
       free(entry);
    }
+}
+
+/* A thread's CPUs, through the console's 64-bit masks */
+extern int32_t scePthreadGetaffinity(pthread_t thread, uint64_t *mask);
+extern int32_t scePthreadSetaffinity(pthread_t thread, uint64_t mask);
+
+/* The console's error codes are 0x80020000 and the errno value */
+static int error_number(int32_t result)
+{
+   if (!result)
+      return 0;
+   const uint32_t code = (uint32_t)result;
+   return code >= 0x80020001u && code < 0x80020100u ? (int)(code & 0xff) : EINVAL;
+}
+
+int libre_pthread_setaffinity_np(pthread_t thread, size_t size, const void *set)
+{
+   if (!set)
+      return EINVAL;
+   const unsigned char *bytes = set;
+   uint64_t mask = 0;
+   for (size_t i = 0; i < size; i++)
+   {
+      if (i < sizeof mask)
+         mask |= (uint64_t)bytes[i] << (8 * i);
+      else if (bytes[i])
+         return EINVAL; /* a CPU the console does not have */
+   }
+   if (!mask)
+      return EINVAL;
+   return error_number(scePthreadSetaffinity(thread, mask));
+}
+
+int libre_pthread_getaffinity_np(pthread_t thread, size_t size, void *set)
+{
+   if (!set)
+      return EINVAL;
+   uint64_t mask = 0;
+   const int error = error_number(scePthreadGetaffinity(thread, &mask));
+   if (error)
+      return error;
+   memset(set, 0, size);
+   memcpy(set, &mask, size < sizeof mask ? size : sizeof mask);
+   return 0;
 }

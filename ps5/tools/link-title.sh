@@ -71,7 +71,9 @@ libre_bound=(__cxa_thread_atexit_impl
     gmtime_r localtime_r times isatty pathconf getpagesizes strsignal getpwnam_r getpwuid_r umask fork
     setsid wait4 fchown sbrk syscall posix_madvise openlog popen pclose memfd_create dladdr
     access statfs fstatfs statvfs fstatvfs futimens utimensat link symlink readlink realpath mkstemp mkstemps
-    posix_fallocate __assert)
+    posix_fallocate __assert
+    accept4 getaddrinfo freeaddrinfo gai_strerror getnameinfo if_nametoindex if_indextoname if_nameindex
+    if_freenameindex in6addr_any)
 for name in "${libre_bound[@]}"; do
     for i in "${!radv_link_flags[@]}"; do
         [[ ${radv_link_flags[$i]} == "--defsym=$name=ps5_$name" ]] && radv_link_flags[$i]="--defsym=$name=libre_$name"

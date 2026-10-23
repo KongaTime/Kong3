@@ -82,6 +82,12 @@ int libre_shm_unmap(void *view, size_t size, unsigned flags);
 int sceKernelQueryMemoryProtection(void *address, void **start, void **end, uint32_t *protection);
 int sceKernelMprotect(const void *address, size_t size, int protection);
 
+/* And what memory is left: the direct pool's size, its largest free block (from
+ * start to end, aligned), and the title's flexible memory free */
+size_t sceKernelGetDirectMemorySize(void);
+int sceKernelAvailableDirectMemorySize(int64_t start, int64_t end, size_t alignment, int64_t *found, size_t *size);
+int sceKernelAvailableFlexibleMemorySize(size_t *size);
+
 #ifdef __cplusplus
 }
 #endif
