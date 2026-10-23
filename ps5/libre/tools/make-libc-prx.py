@@ -56,6 +56,8 @@ NID_SUFFIX = bytes.fromhex("518D64A635DED8C1E6B039B1C3E55230")
 # Sony's program header and dynamic tags (the public PS4/PS5 module format)
 PT_SCE_MODULE_PARAM = 0x61000002
 PT_SCE_COMMENT = 0x6FFFFF00
+PT_NOTE, NT_GNU_BUILD_ID = 4, 3
+BUILD_ID_NOTE_SIZE = 12 + 4 + 20
 DT_SCE_MODULE_INFO = 0x61000043
 DT_SCE_MODULE_ATTR = 0x61000011
 DT_SCE_ORIGINAL_FILENAME = 0x61000041
@@ -70,6 +72,7 @@ DT_SCE_HASHSZ = 0x6100003D
 DT_NULL, DT_NEEDED, DT_PLTRELSZ, DT_PLTGOT, DT_HASH, DT_STRTAB, DT_SYMTAB = 0, 1, 2, 3, 4, 5, 6
 DT_RELA, DT_RELASZ, DT_RELAENT, DT_STRSZ, DT_SYMENT, DT_INIT, DT_FINI, DT_SONAME = 7, 8, 9, 10, 11, 12, 13, 14
 DT_PLTREL, DT_JMPREL = 20, 23
+DT_RELACOUNT = 0x6FFFFFF9
 DT_INIT_ARRAY, DT_FINI_ARRAY, DT_INIT_ARRAYSZ, DT_FINI_ARRAYSZ = 25, 26, 27, 28
 DT_PREINIT_ARRAY, DT_PREINIT_ARRAYSZ = 32, 33
 R_X86_64_JUMP_SLOT = 7
@@ -285,13 +288,24 @@ def build(exports, comment, setup_from="init", threads=True, heap=True, minimal=
     jmprel = b"".join(struct.pack("<QQq", got_slot(key), (import_index[key] << 32) | R_X86_64_JUMP_SLOT, 0)
                       for key, _, _ in imports)
 
+    # The tables as the console's own modules lay them out, each straight after the
+    # one before: names, symbols, jump-slot relocations, relocations, hash, the
+    # build ID's note, then the dynamic section.
+    #
+    # The note is what libkernel's loader requires: without a PT_NOTE there it
+    # cannot lay the module's data out (preprocess_dt_entries fails with 8 in
+    # calcurate_sce_dynlibdata_layout, then PRX_SCE_MODULE_LOAD_ERROR), measured on
+    # my console with build 155 and klog: the console's libc.prx loads, and the
+    # same file with its note's program header made PT_NULL does not. Every module
+    # this wrote before had none, which is why none of them loaded
     tables_va = DATA_VA + align(len(data), PAGE)
     strtab_va = tables_va
     symtab_va = align(strtab_va + len(strings), 8)
-    hash_va = align(symtab_va + len(symtab), 8)
-    rela_va = align(hash_va + len(hash_table), 8)
-    jmprel_va = align(rela_va + len(rela), 8)
-    dynamic_va = align(jmprel_va + len(jmprel), 8)
+    jmprel_va = symtab_va + len(symtab)
+    rela_va = jmprel_va + len(jmprel)
+    hash_va = rela_va + len(rela)
+    note_va = align(hash_va + len(hash_table), 4)
+    dynamic_va = align(note_va + BUILD_ID_NOTE_SIZE, 8)
 
     dynamic = [(DT_SONAME, soname)]
     for file, module, module_id, library, library_id in import_from:
@@ -311,13 +325,17 @@ def build(exports, comment, setup_from="init", threads=True, heap=True, minimal=
         dynamic.append((DT_SCE_EXPORT_LIB_ATTR, (identifier << 48) | 1))
     dynamic += [
         (DT_RELA, rela_va), (DT_RELASZ, len(rela)), (DT_RELAENT, 0x18),
+        # How many of them are relative (all of them), as the console's modules say
+        (DT_RELACOUNT, len(rela) // 0x18),
     ]
-    if imports:
-        dynamic += [(DT_JMPREL, jmprel_va), (DT_PLTRELSZ, len(jmprel)), (DT_PLTGOT, DATA_VA + GOT), (DT_PLTREL, DT_RELA)]
+    # Always, as the console's modules have them, even with no imports (an empty table)
+    dynamic += [(DT_JMPREL, jmprel_va), (DT_PLTRELSZ, len(jmprel)), (DT_PLTGOT, DATA_VA + GOT), (DT_PLTREL, DT_RELA)]
     dynamic += [
         (DT_SYMTAB, symtab_va), (DT_SYMENT, 0x18), (DT_STRTAB, strtab_va), (DT_STRSZ, len(strings)),
         (DT_HASH, hash_va),
-        (DT_PREINIT_ARRAY, DATA_VA + PREINIT), (DT_PREINIT_ARRAYSZ, 8),
+        # The preinit array only when it has an entry (the set-up's address, filled by
+        # its relocation); otherwise none, not one entry left 0 for the loader to call
+        (DT_PREINIT_ARRAY, DATA_VA + PREINIT if rela else 0), (DT_PREINIT_ARRAYSZ, 8 if rela else 0),
         (DT_INIT_ARRAY, 0), (DT_INIT_ARRAYSZ, 0), (DT_FINI_ARRAY, 0), (DT_FINI_ARRAYSZ, 0),
         (DT_INIT, INIT), (DT_FINI, FINI),
         (DT_SCE_SYMTABSZ, len(symtab)), (DT_SCE_HASHSZ, len(hash_table)),
@@ -333,14 +351,20 @@ def build(exports, comment, setup_from="init", threads=True, heap=True, minimal=
 
     place(strtab_va, strings)
     place(symtab_va, symtab)
-    place(hash_va, hash_table)
-    place(rela_va, rela)
     place(jmprel_va, jmprel)
+    place(rela_va, rela)
+    place(hash_va, hash_table)
+    place(note_va, bytes(BUILD_ID_NOTE_SIZE))
     place(dynamic_va, dynamic_bytes)
+    # The build ID: a SHA-1 of the module's code, data and tables, so the same
+    # module always has the same one (an ELF note, type 3, owner "GNU")
+    build_id = hashlib.sha1(bytes(text) + bytes(data) + bytes(tables)).digest()
+    note = struct.pack("<III", 4, len(build_id), NT_GNU_BUILD_ID) + b"GNU\0" + build_id
+    tables[note_va - tables_va:note_va - tables_va + len(note)] = note
 
     comment_record = b"PATH" + struct.pack("<II", len(comment) + 1, 0) + comment.encode() + b"\0"
 
-    phnum = 6
+    phnum = 7
     code_offset = PAGE
     data_offset = code_offset + align(len(text), PAGE)
     tables_offset = data_offset + align(len(data), PAGE)
@@ -356,6 +380,7 @@ def build(exports, comment, setup_from="init", threads=True, heap=True, minimal=
         phdr(PT_SCE_MODULE_PARAM, 4, data_offset + MODULE_PARAM, DATA_VA + MODULE_PARAM, 0x20, 0x20, 8),
         phdr(2, 6, tables_offset + (dynamic_va - tables_va), dynamic_va, len(dynamic_bytes), len(dynamic_bytes), 8),
         phdr(1, 0, tables_offset, tables_va, len(tables), len(tables), PAGE),         # tables, read by the loader
+        phdr(PT_NOTE, 0, tables_offset + (note_va - tables_va), note_va, BUILD_ID_NOTE_SIZE, BUILD_ID_NOTE_SIZE, 4),
         phdr(PT_SCE_COMMENT, 0, comment_offset, 0, len(comment_record), 0, 16),
     ]
     elf_header = struct.pack(

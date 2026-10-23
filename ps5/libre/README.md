@@ -9,10 +9,10 @@ console. Not from the code it replaces.
 
 | Part | File | Replaces | Status |
 | --- | --- | --- | --- |
-| The entry point: FreeBSD's start block, the C library's set-up, the init and fini arrays, IEEE floating point, `main`, `catchReturnFromMain` | `crt/start.c` | PS5_Vulkan's `app_crt.cpp` and the platform's `ps5_fp_ieee` | built (build 151, `PS5_LIBRE_START=1`); not yet run on the console |
+| The entry point: FreeBSD's start block, the C library's set-up, the init and fini arrays, IEEE floating point, `main`, `catchReturnFromMain` | `crt/start.c` | PS5_Vulkan's `app_crt.cpp` and the platform's `ps5_fp_ieee` | runs on the console: build 155 with PS5_Vulkan's `libc.prx` starts, runs every step to `main` and RPCS3 |
 | The memory layout: four 16 KiB-aligned segments, the unwind tables' bounds | `ld/ps5-title.ld` | PS5_Vulkan's `ps5-pie.ld` and `ps5-pie-unwind.ld` | built: the same segments, addresses and section groups as build 150's |
 | The symbol policy: operator new and delete kept inside | `ld/title-symbols.map` | PS5_Vulkan's `app-symbols.map` | built |
-| `sce_module/libc.prx` | | PS5_Vulkan's generated module | next: what the loader requires of it is measured on the console first |
+| `sce_module/libc.prx` | `tools/make-libc-prx.py` | PS5_Vulkan's generated module | loads past the loader's checks since the build ID's note (klog); the minimal module then stops the console while it loads: being narrowed down from the console's module, which loads |
 
 `ps5/tools/link-title.sh` takes these with `PS5_LIBRE_START=1`; the default stays
 the old start-up until the new one has run on the console.
