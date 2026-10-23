@@ -148,16 +148,17 @@ def main():
             source=dict(kind="git", path=str(sdk), remote="https://github.com/mihawk-99/PS5_PayloadSDK", revision=sdk_rev,
                         dirty=False)))
 
-    # PS5_Vulkan: the link recipe, the CRT and its startup, the AGC imports, libc.prx
-    vrev, vdirty, vremote = revision(vulkan)
-    write_text(out / "ps5-vulkan/GPL-3.0.txt", vulkan, vrev, "LICENSE")
-    vulkan_uses = [r.split(":")[0] for r in gpl3.get("ps5-vulkan", []) if not r.startswith("its native tool")]
-    parts.append(dict(
-        id="ps5-vulkan", name="PS5_Vulkan: its native tool, which packages eboot.bin and sce_module/libc.prx"
-                              + (f", and the link's {', '.join(vulkan_uses)}" if vulkan_uses else ""),
-        licence="GPL-3.0-or-later", copyright=["Copyright (C) 2026 Mihawk"],
-        artifacts=["eboot.bin", "sce_module/libc.prx"], texts="licenses/ps5-vulkan/",
-        source=dict(kind="git", path=str(vulkan), remote=vremote, revision=vrev, dirty=vdirty)))
+    # PS5_Vulkan, when something of it is in the title: its CRT, linker script,
+    # symbol policy or libc.prx (PS5_LIBRE_START=0), or code its native tool
+    # added in packaging (it adds none, ps5/tools/shareable.py checks)
+    if "ps5-vulkan" in gpl3:
+        vrev, vdirty, vremote = revision(vulkan)
+        write_text(out / "ps5-vulkan/GPL-3.0.txt", vulkan, vrev, "LICENSE")
+        parts.append(dict(
+            id="ps5-vulkan", name="PS5_Vulkan: " + "; ".join(gpl3["ps5-vulkan"]),
+            licence="GPL-3.0-or-later", copyright=["Copyright (C) 2026 Mihawk"],
+            artifacts=["eboot.bin", "sce_module/libc.prx"], texts="licenses/ps5-vulkan/",
+            source=dict(kind="git", path=str(vulkan), remote=vremote, revision=vrev, dirty=vdirty)))
 
     # RADV: Mesa's Vulkan driver, from my PS5_Mesa fork, built by PS5_Vulkan
     provenance = (archive.parent.parent / "PROVENANCE.txt").read_text()

@@ -68,6 +68,14 @@ About 170 functions to write.
    GPL header; a release check that fails on any GPL-3.0 object, symbol or file.
 5. **Packaging and notices:** confirm the native tool adds no code to the title (or
    write a packager), complete notices for every part, then a beta built this way.
+   The native tool adds no code (measured on build 171): its link step leaves the
+   code and read-only data byte for byte and adds the console's tables, built from
+   the title's own symbols (472 NIDs, 8 library names, the process parameters,
+   build ID notes); its SELF wrapping copies the ELF verbatim behind a header,
+   zero padding and a digest of the input. RADV's archive is PS5_Mesa's own build
+   (its PS5 window system MIT). ps5/tools/shareable.py checks the packaging at each
+   link: every executable segment out is one in, byte for byte, and the signed
+   files carry it verbatim.
 
 When a part's status is uncertain, it does not ship until it is settled. This plan is
 an engineer's reading of the licences, not legal advice.

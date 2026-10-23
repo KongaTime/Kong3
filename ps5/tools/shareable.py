@@ -11,8 +11,8 @@ title, with what shows it:
   platform     a member of the PS5 platform layer (libps5platform.a) the linker
                took (link/why-extract.txt, lld's --why-extract)
   ps5-vulkan   PS5_Vulkan's CRT, linker script, symbol policy or libc.prx in the
-               link (link/parts.txt); and its native tool, which makes eboot.bin
-               and libc.prx, until it is shown to add no code of its own
+               link (link/parts.txt); or code its native tool added in packaging
+               eboot.bin and libc.prx (it adds none: packaging_findings)
   lsfg         Lossless Scaling's frame generation (PS5_RPCS3's RSX/VK/lsfg/)
   mihawkgen    MihawkGen's (PS5_RPCS3's RSX/VK/mihawkgen/, VKFrameGenMihawk.cpp)
   ui-kit       the UI kit (ps5/ui/), in a title that has it
@@ -25,7 +25,9 @@ Copyright (c) 2026 KongaTime
 SPDX-License-Identifier: MIT
 """
 
+import json
 import re
+import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -51,6 +53,66 @@ NAMES = {
     "mihawkgen": "MihawkGen's frame generation (PS5_RPCS3's RSX/VK/mihawkgen/)",
     "ui-kit": "the UI kit (PS5_VKHomebrewUI, ps5/ui/)",
 }
+
+
+def program_headers(data):
+    """An ELF64's program headers: (type, flags, offset, vaddr, filesz), and the
+    bytes of the ELF header and the table."""
+    if data[:4] != b"\x7fELF":
+        return None, b""
+    phoff, = struct.unpack_from("<Q", data, 0x20)
+    phentsize, phnum = struct.unpack_from("<HH", data, 0x36)
+    headers = []
+    for i in range(phnum):
+        p_type, p_flags, p_offset, p_vaddr, _, p_filesz, _, _ = struct.unpack_from("<IIQQQQQQ", data, phoff + i * phentsize)
+        headers.append((p_type, p_flags, p_offset, p_vaddr, p_filesz))
+    return headers, data[:0x40] + data[phoff:phoff + phentsize * phnum]
+
+
+def executable(headers, data):
+    """{vaddr: bytes} of each executable PT_LOAD"""
+    return {va: data[off:off + size] for kind, flags, off, va, size in headers if kind == 1 and flags & 1}
+
+
+def packaging_findings(build):
+    """What PS5_Vulkan's native tool added to the title's code, if anything.
+
+    Measured for build 171 (docs/distributable-build.md): its link step leaves
+    the code and read-only data byte for byte and adds the console's tables
+    (the symbols' NIDs, the imports, the process parameters), unmapped or data;
+    its SELF wrapping copies the ELF verbatim behind a header, zeros and a
+    digest. Checked again at each link: every executable segment it writes is
+    one of the input's, byte for byte, and reaches the signed file verbatim."""
+    reasons = []
+    title_id = json.loads((PS5 / "sce_sys/param.json").read_text())["titleId"]
+    app = PS5.parent / "dist" / title_id
+    pairs = [("eboot.bin", build / "link/llvm-pie.elf", build / "eboot.elf", app / "eboot.bin"),
+             ("sce_module/libc.prx", build / "link/libc.raw.elf", None, app / "sce_module/libc.prx")]
+    for name, linked, converted, signed in pairs:
+        if not linked.exists() or not signed.exists():
+            reasons.append(f"{name}: cannot check its packaging ({linked.name} or {signed.name} is missing)")
+            continue
+        source = linked.read_bytes()
+        source_headers, _ = program_headers(source)
+        source_code = executable(source_headers, source)
+        if converted is not None:
+            data = converted.read_bytes()
+            headers, _ = program_headers(data)
+            code = executable(headers, data)
+            if code != source_code:
+                reasons.append(f"{name}: its link step changed or added executable bytes "
+                               f"({len(code)} executable segments out, {len(source_code)} in)")
+                continue
+        else:
+            data, headers, code = source, source_headers, source_code
+        wrapped = signed.read_bytes()
+        _, header_bytes = program_headers(data)
+        if wrapped.find(header_bytes) < 0:
+            reasons.append(f"{name}: the signed file does not carry the ELF's headers verbatim")
+        for va, segment in code.items():
+            if wrapped.find(segment) < 0:
+                reasons.append(f"{name}: the signed file does not carry the code at {va:#x} verbatim")
+    return reasons
 
 
 def findings(build, nm="llvm-nm"):
@@ -91,9 +153,9 @@ def findings(build, nm="llvm-nm"):
                 add("ps5-vulkan", f"{kind}: {source}")
     else:
         add("unknown", f"{parts} is missing: link again with this link-title.sh")
-    # Its native tool makes eboot.bin and libc.prx; that it adds no code of its
-    # own is phase 5's to show (docs/distributable-build.md)
-    add("ps5-vulkan", "its native tool packages eboot.bin and sce_module/libc.prx: not yet shown to add no code")
+    # Its native tool packages eboot.bin and libc.prx: it must add no code
+    for reason in packaging_findings(Path(build)):
+        add("ps5-vulkan", reason)
 
     # The symbols the ELF defines
     elf = link / "llvm-pie.elf"
