@@ -26,7 +26,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <cerrno>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
@@ -35,6 +37,7 @@
 #include <cstdlib>
 #include <mutex>
 #include <string>
+#include <thread>
 
 /* After libc++'s <locale>: the SDK's xlocale headers, first, hide its narrow _l classifiers */
 #include <execinfo.h>
@@ -66,7 +69,7 @@ namespace {
 
 /* This build's number, which the launcher shows and the trace and RPCS3.log
  * start with: one more for each build that goes to the console */
-const char *const titleBuild = "174";
+const char *const titleBuild = "178";
 
 /* The console's buttons as the PS3's: OPTIONS is START, the touch pad's click
  * SELECT; the PS button stays the shell's */
@@ -242,6 +245,120 @@ namespace
 	}();
 }
 
+/* Army of Two: The 40th Day froze the whole emulator for 2.7 s every 3 to 4 s
+ * (build 176), each freeze starting at a file call while the game wrote its
+ * disk cache and logged some 130 warnings a second. Where /app0/rpcs3-probe-io.txt
+ * is: standard error at that rate, then the cache's pattern (1 MiB written,
+ * read back in 64 KiB opens), each call timed, beside a thread that measures
+ * how long the process stood still */
+namespace {
+
+double secondsSince(std::chrono::steady_clock::time_point start)
+{
+	return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+}
+
+struct probeTimes {
+	double max = 0, total = 0;
+	int count = 0, slow = 0;
+	void add(double seconds)
+	{
+		max = seconds > max ? seconds : max;
+		total += seconds;
+		count++;
+		slow += seconds > 0.1;
+	}
+	std::string text(const char *name) const
+	{
+		char line[160];
+		snprintf(line, sizeof line, "%s %d, longest %.1f ms, %d over 100 ms, %.2f s in all", name, count, max * 1000, slow, total);
+		return line;
+	}
+};
+
+void probeIo()
+{
+	if (access("/app0/rpcs3-probe-io.txt", F_OK) != 0)
+		return;
+	std::atomic<bool> stop{false};
+	std::atomic<double> stood{0};
+	std::thread ticker([&] {
+		auto last = std::chrono::steady_clock::now();
+		while (!stop) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			const double gap = secondsSince(last);
+			last = std::chrono::steady_clock::now();
+			if (gap > stood)
+				stood = gap;
+		}
+	});
+
+	/* 15 s of standard error at 200 lines a second, each about 150 characters */
+	probeTimes writes;
+	const auto start = std::chrono::steady_clock::now();
+	for (int i = 0; i < 3000; i++) {
+		const auto before = std::chrono::steady_clock::now();
+		fprintf(stderr, "probe-io %4d sys_fs: sys_fs_open(path=\"/dev_hdd1/FIOSCACHE/cach0000.dat\", flags=00, fd=*0xd008cfe0, mode=00, arg=*0x0, size=0x0)\n", i);
+		writes.add(secondsSince(before));
+		const double due = (i + 1) / 200.0;
+		const double now = secondsSince(start);
+		if (now < due)
+			std::this_thread::sleep_for(std::chrono::duration<double>(due - now));
+	}
+	trace(("probe-io: standard error: " + writes.text("lines") + "; the process stood still up to " + std::to_string(int(stood * 1000)) + " ms").c_str());
+	stood = 0;
+
+	/* 40 files of 1 MiB, each written in 64 KiB parts, then read back with an
+	 * open, a read and a close for each part */
+	mkdir("/app0/rpcs3/probe-io", 0777);
+	static char block[65536];
+	probeTimes creates, parts, opens, reads, closes;
+	for (int file = 0; file < 40; file++) {
+		char path[96];
+		snprintf(path, sizeof path, "/app0/rpcs3/probe-io/cach%04X.dat", file);
+		auto before = std::chrono::steady_clock::now();
+		FILE *out = fopen(path, "wb");
+		creates.add(secondsSince(before));
+		if (!out)
+			break;
+		for (int part = 0; part < 16; part++) {
+			before = std::chrono::steady_clock::now();
+			fwrite(block, 1, sizeof block, out);
+			fflush(out);
+			parts.add(secondsSince(before));
+		}
+		before = std::chrono::steady_clock::now();
+		fclose(out);
+		closes.add(secondsSince(before));
+		for (int part = 0; part < 16; part++) {
+			before = std::chrono::steady_clock::now();
+			FILE *in = fopen(path, "rb");
+			opens.add(secondsSince(before));
+			if (!in)
+				break;
+			before = std::chrono::steady_clock::now();
+			fseek(in, part * 65536L, SEEK_SET);
+			fread(block, 1, sizeof block, in);
+			reads.add(secondsSince(before));
+			before = std::chrono::steady_clock::now();
+			fclose(in);
+			closes.add(secondsSince(before));
+		}
+	}
+	for (int file = 0; file < 40; file++) {
+		char path[96];
+		snprintf(path, sizeof path, "/app0/rpcs3/probe-io/cach%04X.dat", file);
+		unlink(path);
+	}
+	rmdir("/app0/rpcs3/probe-io");
+	stop = true;
+	ticker.join();
+	trace(("probe-io: files: " + creates.text("creates") + "; " + parts.text("64 KiB writes") + "; " + opens.text("opens") + "; " +
+		reads.text("reads") + "; " + closes.text("closes") + "; the process stood still up to " + std::to_string(int(stood * 1000)) + " ms").c_str());
+}
+
+} // namespace
+
 extern "C" int ps5_title_main(void)
 {
 	/* Kept from a fatal error before main (RPCS3's static initialisers), if any */
@@ -252,6 +369,7 @@ extern "C" int ps5_title_main(void)
 	}
 	trace((std::string("title: start, build ") + titleBuild).c_str());
 	checkLibre();
+	probeIo();
 	std::string boot;
 	if (std::ifstream file{"/app0/rpcs3-boot.txt"}) {
 		std::getline(file, boot);
