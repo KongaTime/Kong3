@@ -82,14 +82,14 @@ side by side in one folder:
 
 | Repository | Clone it as | Revision of this release |
 | --- | --- | --- |
-| [KongaTime/Kong3](https://github.com/KongaTime/Kong3) (this; it was PS5_RPCS3Title) | `Kong3` | the release tag, `v1.0.0-beta1` |
-| [KongaTime/PS5_RPCS3](https://github.com/KongaTime/PS5_RPCS3), branch `libre-libc` | `PS5_RPCS3` | `5a32ac17294a6bd75b6f5e557a42b5cc74602b78`, with its submodules (OpenCV's is not needed; LLVM's at depth 1 is enough) |
+| [KongaTime/Kong3](https://github.com/KongaTime/Kong3) (this; it was PS5_RPCS3Title) | `Kong3` | the release tag, `v1.0.0-beta2` |
+| [KongaTime/PS5_RPCS3](https://github.com/KongaTime/PS5_RPCS3), branch `libre-libc` | `PS5_RPCS3` | `ac0acf14813971775344b047d474feaea7eba3f5`, with its submodules (OpenCV's is not needed; LLVM's at depth 1 is enough) |
 | [KongaTime/PS5_PayloadSDK](https://github.com/KongaTime/PS5_PayloadSDK) | `PS5_PayloadSDK` | `1de8b37d583de476ad07cde9a0d562b75fb1be8f` (`ps5/tools/setup-sdk.sh` pins it) |
 | [KongaTime/PS5_Vulkan](https://github.com/KongaTime/PS5_Vulkan), branch `rpcs3-beta-1` | `PS5_Vulkan` | `f3cbf875f89978deae9f855b9be2610cec2818ae` |
 | [KongaTime/PS5_Mesa](https://github.com/KongaTime/PS5_Mesa), branch `rpcs3-beta-1` | `PS5_Mesa` | `dc82d010021e4bae5a12cd143ff44db4d7307e47` (PS5_Vulkan's `tools/build-radv.sh` pins it) |
 
 ```bash
-git clone -b v1.0.0-beta1 https://github.com/KongaTime/Kong3
+git clone -b v1.0.0-beta2 https://github.com/KongaTime/Kong3
 git clone -b libre-libc --recurse-submodules --shallow-submodules https://github.com/KongaTime/PS5_RPCS3
 git clone https://github.com/KongaTime/PS5_PayloadSDK
 git clone -b rpcs3-beta-1 https://github.com/KongaTime/PS5_Vulkan
