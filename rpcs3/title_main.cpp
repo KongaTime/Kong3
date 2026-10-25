@@ -38,9 +38,11 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 /* After libc++'s <locale>: the SDK's xlocale headers, first, hide its narrow _l classifiers */
 #include <execinfo.h>
+#include <libre/threads.h>
 #include <langinfo.h>
 #include <xlocale.h>
 
@@ -69,7 +71,7 @@ namespace {
 
 /* This build's number, which the launcher shows and the trace and RPCS3.log
  * start with: one more for each build that goes to the console */
-const char *const titleBuild = "184";
+const char *const titleBuild = "186";
 
 /* The console's buttons as the PS3's: OPTIONS is START, the touch pad's click
  * SELECT; the PS button stays the shell's */
@@ -359,6 +361,118 @@ void probeIo()
 
 } // namespace
 
+/* How fast the title's CPUs run, and whether it can have more of them (build
+ * 185, where /app0/rpcs3-probe-cpu.txt is): a title runs on 13 of the console's
+ * 16 CPU threads, and GTA V keeps about eight threads busy on its six cores and
+ * a half. Each clock is read from a chain of dependent adds, alone and with
+ * every CPU the title has busy; then CPUs 13 to 15 are asked for, one at a
+ * time, and the kernel's CPU mode */
+extern "C" int32_t sceKernelGetCurrentCpu(void);
+extern "C" int sceKernelGetCpumode(void);
+
+namespace {
+
+/* Billions of adds a second on the calling thread: eight dependent adds an
+ * iteration, one cycle each, so about the clock in GHz */
+double addChainGhz(uint64_t iterations)
+{
+	const auto start = std::chrono::steady_clock::now();
+	uint64_t x = 1, n = iterations;
+	__asm__ volatile(
+		"1:\n\t"
+		"add %0, %0\n\tadd %0, %0\n\tadd %0, %0\n\tadd %0, %0\n\t"
+		"add %0, %0\n\tadd %0, %0\n\tadd %0, %0\n\tadd %0, %0\n\t"
+		"dec %1\n\tjnz 1b"
+		: "+r"(x), "+r"(n));
+	const double seconds = secondsSince(start);
+	return seconds > 0 ? iterations * 8.0 / seconds / 1e9 : 0;
+}
+
+std::string ghzText(int)
+{
+	char text[32];
+	snprintf(text, sizeof text, " (%.2f GHz)", addChainGhz(200000000));
+	return text;
+}
+
+bool pinTo(int cpu)
+{
+	const uint64_t mask = uint64_t{1} << cpu;
+	if (libre_pthread_setaffinity_np(pthread_self(), sizeof(mask), &mask) != 0)
+		return false;
+	for (int tries = 0; tries < 1000 && sceKernelGetCurrentCpu() != cpu; tries++)
+		std::this_thread::yield();
+	return sceKernelGetCurrentCpu() == cpu;
+}
+
+void probeCpu()
+{
+	if (access("/app0/rpcs3-probe-cpu.txt", F_OK) != 0)
+		return;
+	uint64_t own = 0;
+	libre_pthread_getaffinity_np(pthread_self(), sizeof(own), &own);
+	char line[512];
+	snprintf(line, sizeof line, "probe-cpu: the title's CPUs 0x%llx, the kernel's CPU mode %d", (unsigned long long)own, sceKernelGetCpumode());
+	trace(line);
+
+	/* Each CPU alone */
+	std::string alone = "probe-cpu: GHz alone:";
+	for (int cpu = 0; cpu < 16; cpu++) {
+		if (!(own >> cpu & 1))
+			continue;
+		if (!pinTo(cpu)) {
+			alone += " " + std::to_string(cpu) + "=not placed";
+			continue;
+		}
+		addChainGhz(20000000); /* the clock rises first */
+		snprintf(line, sizeof line, " %d=%.2f", cpu, addChainGhz(200000000));
+		alone += line;
+	}
+	trace(alone.c_str());
+
+	/* All at once */
+	std::vector<double> busy(16, 0.0);
+	std::vector<std::thread> threads;
+	std::atomic<int> ready{0};
+	for (int cpu = 0; cpu < 16; cpu++) {
+		if (!(own >> cpu & 1))
+			continue;
+		threads.emplace_back([&, cpu] {
+			if (!pinTo(cpu))
+				return;
+			ready++;
+			while (ready.load() < __builtin_popcountll(own))
+				std::this_thread::yield();
+			addChainGhz(20000000);
+			busy[cpu] = addChainGhz(200000000);
+		});
+	}
+	for (auto &thread : threads)
+		thread.join();
+	std::string all = "probe-cpu: GHz with all busy:";
+	for (int cpu = 0; cpu < 16; cpu++)
+		if (own >> cpu & 1) {
+			snprintf(line, sizeof line, " %d=%.2f", cpu, busy[cpu]);
+			all += line;
+		}
+	trace(all.c_str());
+
+	/* The three the title is not given */
+	std::string more = "probe-cpu: asking for more:";
+	for (int cpu = 13; cpu < 16; cpu++) {
+		const uint64_t mask = uint64_t{1} << cpu;
+		const int result = libre_pthread_setaffinity_np(pthread_self(), sizeof(mask), &mask);
+		std::this_thread::yield();
+		snprintf(line, sizeof line, " CPU %d: affinity %d, now on %d%s", cpu, result, sceKernelGetCurrentCpu(),
+			result == 0 && sceKernelGetCurrentCpu() == cpu ? ghzText(cpu).c_str() : "");
+		more += line;
+	}
+	libre_pthread_setaffinity_np(pthread_self(), sizeof(own), &own);
+	trace(more.c_str());
+}
+
+} // namespace
+
 extern "C" int ps5_title_main(void)
 {
 	/* Kept from a fatal error before main (RPCS3's static initialisers), if any */
@@ -370,6 +484,7 @@ extern "C" int ps5_title_main(void)
 	trace((std::string("title: start, build ") + titleBuild).c_str());
 	checkLibre();
 	probeIo();
+	probeCpu();
 	std::string boot;
 	if (std::ifstream file{"/app0/rpcs3-boot.txt"}) {
 		std::getline(file, boot);
